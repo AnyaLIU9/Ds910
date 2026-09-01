@@ -1,0 +1,3 @@
+[submodule "benchmarks/gpqa"]
+	path = benchmarks/gpqa
+	url = https://www.modelscope.cn/datasets/modelscope/gpqa.git

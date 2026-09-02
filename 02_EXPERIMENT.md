@@ -52,9 +52,11 @@ dsv4-npu5                                   一次运行出来的容器
 │   └── cache/                                  # 第一次转换后生成 43 个 GGUF
 ├── image/
 │   ├── Dockerfile
-│   └── debs/                                   # 17 个 ARM64 deb
+│   └── debs/                                   # 从 Mac 上传来的 17 个 ARM64 deb
 └── results/
 ```
+
+`image/debs/` 中的 deb 只会安装进后面构建的 Docker 派生镜像。**不要在测试服务器宿主机运行 `dpkg -i`。**
 
 `image/Dockerfile` 和 `code/scripts/` 都在 Ds910 仓库中。不要把四个 third-party 仓库再多套一层目录；例如必须直接存在：
 
@@ -167,7 +169,7 @@ cd /home/mem/dsv4/image
 docker build -t dsv4-offload-env:cann85-910b2 .
 ```
 
-这一步不会联网：`FROM` 使用已经导入的基础镜像，`COPY` 使用 `image/debs/`。
+这一步不会联网：`FROM` 使用已经导入的基础镜像，`COPY` 把 `image/debs/` 放进镜像，然后 Dockerfile 在镜像内部执行 `dpkg -i`。它不会把 hwloc 安装到测试服务器宿主机。
 
 验收：
 

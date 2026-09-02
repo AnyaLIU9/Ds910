@@ -67,18 +67,29 @@ KTransformers ZIP 不带子模块内容，所以它里面的 `third_party/` 出�
 
 ## 4. `hwloc` 离线依赖
 
-你本机已经有准备好的 ARM64 Ubuntu 22.04 依赖目录：
+这些 deb **不是安装到 Mac 本机，也不是安装到测试服务器宿主机**。Mac 只负责暂存和上传文件。
+
+联网 Mac 上已经准备好这个目录：
 
 ```text
 /Users/lyy/Downloads/dsv4-hwloc-arm64-debs/
 ```
 
-里面应有 17 个 `.deb` 文件。直接上传这些文件，不要再下载单独的 `libhwloc.so`。
+里面应有 17 个 ARM64 Ubuntu 22.04 `.deb` 文件。把这 17 个文件原样上传到测试服务器：
 
-对应官方包页面：
+```text
+/home/mem/dsv4/image/debs/
+```
 
-- `libhwloc-dev`：https://packages.ubuntu.com/jammy/libhwloc-dev
-- `libhwloc15`：https://packages.ubuntu.com/jammy/libhwloc15
+后续在测试服务器执行 `docker build` 时，`image/Dockerfile` 才会把它们安装进 `dsv4-offload-env:cann85-910b2` 派生镜像。不要在 Mac 或服务器宿主机执行 `dpkg -i`，也不要单独下载一个 `libhwloc.so`。
+
+```text
+Mac 暂存目录
+  → 上传 17 个 deb
+测试服务器 /home/mem/dsv4/image/debs/
+  → docker build
+派生 Docker 镜像里的 Ubuntu 环境
+```
 
 ## 5. GPQA-Diamond（模型跑通后再准备）
 

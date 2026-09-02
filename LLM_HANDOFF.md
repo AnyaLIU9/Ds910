@@ -105,7 +105,7 @@ CPU MXFP4 source:
 让用户执行：
 
 ```bash
-git clone --recurse-submodules git@github.com:AnyaLIU9/Ds910.git
+git clone --recurse-submodules <DS910_REPOSITORY_URL> Ds910
 cd Ds910
 cp config/env.example .env
 ```

@@ -130,9 +130,13 @@ Docker 版本和 CANN 版本不是一回事：Docker 负责容器和设备映射
 #### CANN Recipes 完整交付仓
 
 - 仓库：https://gitcode.com/cann/cann-recipes-infer
-- 当前官方仓库页面：https://gitcode.com/cann/cann-recipes-infer/tree/master
 - 对应 DSV4 完整功能合并记录：https://gitcode.com/cann/cann-recipes-infer/pull/682
-- 本实验把 `1a7fbd34` 作为整个 `cann-recipes-infer` 交付仓的固定版本，不要直接长期跟随会继续变化的 `master`。
+- 固定短 SHA：`1a7fbd34`
+- 固定完整 SHA：`1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5`
+- 提交校验 API：https://gitcode.com/api/v5/repos/cann/cann-recipes-infer/commits/1a7fbd34
+- **固定版本 ZIP 直链**：https://gitcode.com/cann/cann-recipes-infer/-/archive/1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5/cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.zip
+- 固定版本 tar.gz 直链：https://gitcode.com/cann/cann-recipes-infer/-/archive/1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5/cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.tar.gz
+- 本实验固定使用上述提交，不下载会继续变化的 `master` ZIP。
 - 设计文档位于 `docs/integration/sglang/dsv4-flash-single-npu-moe-offload/`，只用于阅读；真正要执行的补丁、转换器和启动脚本位于不带 `docs` 的 `integration/sglang/dsv4-flash-single-npu-moe-offload/`。
 - 本实验必须存在的目录：
 
@@ -157,21 +161,9 @@ scripts/tools/*
 
 - `1a7fbd34`：本实验要保存的 **完整 cann-recipes-infer 交付仓版本**，910B2 路线使用它。
 - `c5cc95e`：A3/910C 从干净 CANN 9.0 镜像构建第三方融合算子时，由环境脚本钉住的一个算子源码版本；它不是本实验顶层交付仓应 checkout 的版本。
-- 当前机器是 910B2，并使用 CANN 8.5.0 专用镜像，因此不要额外把 `c5cc95e` clone 成第二个顶层 `cann-recipes-infer`。
+- 当前机器是 910B2，并使用 CANN 8.5.0 专用镜像，因此不需要准备 `c5cc95e` 对应的另一份顶层源码。
 
-在线取得代码时执行：
-
-```bash
-mkdir -p /home/mem/dsv4/code
-cd /home/mem/dsv4/code
-git clone https://gitcode.com/cann/cann-recipes-infer.git cann-recipes-infer
-git -C cann-recipes-infer checkout 1a7fbd34
-git -C cann-recipes-infer rev-parse --short HEAD
-```
-
-最后一行必须输出 `1a7fbd34`。如果内网无法 clone，就在联网电脑打开官方 `master` 页面，下载完整源码压缩包，上传并解压到：
-
-注意：GitCode 当前的网页路由不支持用 `tree/1a7fbd34` 打开这个短 SHA，该地址会显示 404；这不等于 Git commit 不存在。精确固定版本使用上面的 `git checkout 1a7fbd34`。如果只能在网页手工下载，就从当前 `master` 下载完整仓库，并按下面的关键文件清单验收；官方目录页显示 DSV4 交付目录最近一次合并记录为 `1a7fbd34`（PR #682）。
+本实验只走手工离线路线：联网电脑通过上面的固定版本 ZIP 直链下载，随后把压缩包手工上传到服务器。不要打开 `tree/1a7fbd34`，也不要下载 `master`；GitCode archive 地址中的完整 40 位 SHA 才是版本锁定依据。
 
 ```text
 /home/mem/dsv4/code/cann-recipes-infer/
@@ -271,7 +263,6 @@ git -C cann-recipes-infer rev-parse --short HEAD
 │   │           └── scripts/
 │   │
 │   ├── ktransformers-AK/
-│   │   ├── .git/
 │   │   ├── kt-kernel/
 │   │   └── third_party/
 │   │       ├── pybind11/                       # bb05e081...
@@ -334,43 +325,7 @@ git -C cann-recipes-infer rev-parse --short HEAD
 
 `/home/mem/dsv4/image/Dockerfile` 是我们自己创建的文本文件，不需要提前下载；`image/` 目录也可以等基础镜像导入成功后再创建。
 
-### 3.1 先判断容器能否访问 Ubuntu 软件源
-
-服务器执行完 `docker load` 后测试：
-
-```bash
-docker run --rm \
-  --entrypoint /bin/bash \
-  lmsysorg/sglang:deepseek-v4-npu-910b \
-  -lc 'timeout 30 apt-get update'
-```
-
-如果退出码为 0，走 §3.2；如果无法联网，走 §3.3。无需重新下载官方基础镜像。
-
-### 3.2 容器能访问软件源：现场构建薄派生镜像
-
-创建 `/home/mem/dsv4/image/Dockerfile`：
-
-```dockerfile
-FROM lmsysorg/sglang:deepseek-v4-npu-910b
-USER root
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends libhwloc-dev libhwloc15 && \
-    rm -rf /var/lib/apt/lists/*
-WORKDIR /workspace
-CMD ["/bin/bash"]
-```
-
-构建：
-
-```bash
-cd /home/mem/dsv4/image
-docker build -t dsv4-offload-env:cann85-910b2 .
-```
-
-这次 build 使用本机已经 `docker load` 的基础镜像，只从 Ubuntu 源下载少量 hwloc 包，不会再次 `docker pull` 5 GB 镜像。
-
-### 3.3 容器不能访问软件源：提前准备 ARM64 deb 包
+### 3.1 使用提前准备的 ARM64 deb 离线包
 
 你现在应走这一节。不要在服务器上执行 `apt-get update`，也不要单独从网页只下载一个 `libhwloc.so`。`libhwloc.so` 是运行期动态库，`hwloc.h` 和无版本的链接库则来自开发包；编译 kt-kernel 两者都要。
 
@@ -436,7 +391,7 @@ cd /home/mem/dsv4/image
 docker build -t dsv4-offload-env:cann85-910b2 .
 ```
 
-这个过程完全离线：`FROM` 使用已经 `docker load` 的本地基础镜像，`COPY` 使用刚上传的 deb 包，Dockerfile 里没有 `apt-get`、`curl` 或 `git clone`。
+这个过程完全离线：`FROM` 使用已经 `docker load` 的本地基础镜像，`COPY` 使用刚上传的 deb 包，构建过程中不访问任何网络地址。
 
 本离线包实际包含 `libhwloc-dev`、`libhwloc15` 及基础镜像缺失的间接依赖。已经在同一基础镜像中验证：
 
@@ -447,7 +402,7 @@ docker build -t dsv4-offload-env:cann85-910b2 .
 pkg-config --modversion hwloc            输出 2.7.0
 ```
 
-### 3.4 派生镜像验收
+### 3.2 派生镜像验收
 
 ```bash
 docker run --rm \
@@ -460,11 +415,11 @@ docker run --rm \
 
 ---
 
-## 4. 在联网机准备最终代码结构
+## 4. 在联网电脑手动下载固定压缩包
 
 如果三个仓已经分别下载，仍要将它们按 KTransformers 的目录要求摆放。
 
-### 4.0 没有 Git：在官网按固定提交手工下载（推荐给你）
+### 4.1 在官网按固定提交手工下载
 
 服务器宿主机没有 Git 不影响本实验：下载和整理在联网电脑完成；后面执行补丁时，基础 Docker 镜像内已经有 `/usr/bin/git`。
 
@@ -484,10 +439,48 @@ KTransformers 的 GitHub ZIP **不会包含 Git 子模块内容**，所以解压
 
 CANN Recipes 这样手工下载：
 
-1. 打开官方仓库：https://gitcode.com/cann/cann-recipes-infer/tree/master
-2. 点页面仓库区的 `ZIP`/`下载 ZIP`，下载完整仓库，不要只保存网页上的 Markdown。
-3. 同时打开官方 PR #682：https://gitcode.com/cann/cann-recipes-infer/pull/682，确认 DSV4 单卡 MoE offload 合并记录为 `1a7fbd34`。
-4. 当前 `master` 已包含该合并；本实验只使用 `integration/sglang/dsv4-flash-single-npu-moe-offload/` 交付目录。下载后按 §1.1 的文件清单验收。由于 GitCode 的 `tree/1a7fbd34` 短 SHA 网页会 404，手工下载不再依赖这个地址。
+1. 在联网电脑浏览器地址栏粘贴下面这条完整地址并回车：
+
+   ```text
+   https://gitcode.com/cann/cann-recipes-infer/-/archive/1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5/cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.zip
+   ```
+
+2. 浏览器应下载：
+
+   ```text
+   cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.zip
+   ```
+
+3. 如果更喜欢 tar.gz，使用：
+
+   ```text
+   https://gitcode.com/cann/cann-recipes-infer/-/archive/1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5/cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.tar.gz
+   ```
+
+4. 可以先打开下面的公开 API 地址确认短 SHA 对应的完整 SHA。JSON 中的 `sha` 必须为 `1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5`：
+
+   ```text
+   https://gitcode.com/api/v5/repos/cann/cann-recipes-infer/commits/1a7fbd34
+   ```
+
+5. 如果直链出现 GitCode `418/疑似攻击行为`，这是 GitCode WAF 拦截，不是提交不存在。先登录 GitCode 后重新打开同一条固定直链；也可以打开 `https://gitcode.com/cann/cann-recipes-infer/commit/1a7fbd34`，点击 `Browse files/浏览文件`，再点页面仓库区的 `ZIP`。仍被拦截时等待 WAF 恢复或换正常网络重试，不能改下 `master` 代替。
+
+6. 解压后先验证压缩包确实包含核心交付目录：
+
+   ```bash
+   unzip -l cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.zip \
+     | grep 'integration/sglang/dsv4-flash-single-npu-moe-offload/apply_all.sh'
+   ```
+
+   必须能看到 `apply_all.sh`。真正需要的是不带 `docs/` 的 `integration/sglang/dsv4-flash-single-npu-moe-offload/`；`docs/...` 只有说明文字。
+
+7. 解压目录改名为 `cann-recipes-infer`，最终放到：
+
+   ```text
+   /home/mem/dsv4/code/cann-recipes-infer/
+   ```
+
+不要再下载 `master` ZIP。本实验的补丁和脚本必须来自固定提交 `1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5`。
 
 下载完成后，先在联网电脑上双击解压这六个 ZIP，再按下面结构整理。目录后面的长 SHA 是 GitHub 自动生成的解压目录名；先借它确认版本，再改成最终短名字：
 
@@ -514,94 +507,11 @@ third_party/sglang/sglang-298193eb.../python/    # 错误：多了一层
 third_party/sglang/python/                       # 正确
 ```
 
-整理好后运行 §4.6 的结构检查并打成一个 `dsv4-code-bundle.tar.gz` 上传。因为网页 ZIP 没有 `.git` 历史，`git rev-parse HEAD` 报错是预期现象；版本依据是下载 URL/原始 ZIP 文件名中的完整 SHA。`apply_all.sh` 后面仍可使用镜像里的 `git apply` 对普通目录打补丁。
+整理好后运行 §4.2 的结构检查并打成一个 `dsv4-code-bundle.tar.gz` 上传。网页 ZIP 没有版本历史元数据，版本依据是下载 URL 和原始 ZIP 文件名中的完整 SHA。`apply_all.sh` 后面使用镜像里的本地补丁能力处理这些普通目录。
 
 如果你已经按这些 SHA 下载过 KTransformers、SGLang、llama.cpp，不需要重复下载，只需补齐两个空子模块和 CANN Recipes 交付仓。
 
-### 4.1 准备 KTransformers 主仓
-
-本节是“联网电脑有 Git”时的可选方法；没有 Git 就跳过 §4.1～§4.5 的 Git 命令，使用 §4.0。
-
-```bash
-git clone https://github.com/kvcache-ai/ktransformers.git ktransformers-AK
-git -C ktransformers-AK checkout d7b5b49a3ef214a822aba613423551dd56416557
-```
-
-### 4.2 下载两个原始子模块
-
-最简单的方式：
-
-```bash
-git -C ktransformers-AK submodule update --init \
-  third_party/pybind11 \
-  third_party/custom_flashinfer
-```
-
-检查：
-
-```bash
-git -C ktransformers-AK/third_party/pybind11 rev-parse HEAD
-git -C ktransformers-AK/third_party/custom_flashinfer rev-parse HEAD
-```
-
-预期：
-
-```text
-bb05e0810b87e74709d9f4c4545f1f57a1b386f5
-fd94393fb5b8ba8bae9c0bd6ab1c2a429d81ac76
-```
-
-如果 `git submodule` 无法使用，也可以分别下载上述两个固定 commit，然后复制到对应目录。
-
-### 4.3 放入固定版 SGLang
-
-不要使用 KTransformers `.gitmodules` 默认的 sglang，使用本交付指定的 fork：
-
-```bash
-git clone https://github.com/iforgetmyname/sglang.git sglang-fixed
-git -C sglang-fixed checkout 298193eb34c9d87debbdb5957edead0a8b9ec988
-```
-
-保证目标目录不存在或为空后，再复制：
-
-```bash
-cp -a sglang-fixed ktransformers-AK/third_party/sglang
-```
-
-### 4.4 放入固定版 llama.cpp
-
-```bash
-git clone https://github.com/ggml-org/llama.cpp.git llama.cpp-fixed
-git -C llama.cpp-fixed checkout a94e6ff8774b7c9f950d9545baf0ce35e8d1ed2f
-```
-
-保证目标目录不存在或为空后，再复制：
-
-```bash
-cp -a llama.cpp-fixed ktransformers-AK/third_party/llama.cpp
-```
-
-### 4.5 检查四个目录
-
-```bash
-git -C ktransformers-AK rev-parse HEAD
-git -C ktransformers-AK/third_party/pybind11 rev-parse HEAD
-git -C ktransformers-AK/third_party/custom_flashinfer rev-parse HEAD
-git -C ktransformers-AK/third_party/sglang rev-parse HEAD
-git -C ktransformers-AK/third_party/llama.cpp rev-parse HEAD
-```
-
-依次应为：
-
-```text
-d7b5b49a3ef214a822aba613423551dd56416557
-bb05e0810b87e74709d9f4c4545f1f57a1b386f5
-fd94393fb5b8ba8bae9c0bd6ab1c2a429d81ac76
-298193eb34c9d87debbdb5957edead0a8b9ec988
-a94e6ff8774b7c9f950d9545baf0ce35e8d1ed2f
-```
-
-### 4.6 可选：把代码制成一个离线传输包
+### 4.2 把代码制成一个离线传输包
 
 这一步不是下载要求。如果服务器已经分别取得两个完整目录，可跳过本节。
 
@@ -643,7 +553,7 @@ shasum -a 256 dsv4-code-bundle.tar.gz \
   > dsv4-code-bundle.tar.gz.sha256
 ```
 
-将代码包和校验文件上传到 Hugging Face 私有 dataset 仓库。
+将代码包和校验文件通过允许的离线文件传输方式上传到服务器 `/home/mem/dsv4/packages/`。
 
 ---
 
@@ -701,7 +611,7 @@ docker image inspect lmsysorg/sglang:deepseek-v4-npu-910b \
 
 必须显示 `arch=arm64`。
 
-接着严格执行 §3.3：上传并解压 `dsv4-hwloc-arm64-debs.tar.gz`，在服务器本地构建：
+接着严格执行 §3.1：上传并解压 `dsv4-hwloc-arm64-debs.tar.gz`，在服务器本地构建：
 
 ```bash
 cd /home/mem/dsv4/image
@@ -764,19 +674,7 @@ echo $?
 
 应输出 `0`。
 
-检查版本：
-
-如果源码来自 `git clone`，执行：
-
-```bash
-git -C "$REPO" rev-parse HEAD
-git -C "$REPO/third_party/pybind11" rev-parse HEAD
-git -C "$REPO/third_party/custom_flashinfer" rev-parse HEAD
-git -C "$REPO/third_party/sglang" rev-parse HEAD
-git -C "$REPO/third_party/llama.cpp" rev-parse HEAD
-```
-
-如果源码来自 §4.0 的官网 ZIP，上述命令会因为没有 `.git` 目录而失败，不要据此重新下载。改为检查关键文件与目录，并保留六个原始 ZIP 文件名作为版本凭据：
+检查手工解压后的关键文件，并保留六个原始 ZIP 文件名作为版本凭据：
 
 ```bash
 test -f "$REPO/setup.py"
@@ -944,23 +842,7 @@ export REPO=/workspace/code/ktransformers-AK
 export RELEASE_DIR=/workspace/code/cann-recipes-infer/integration/sglang/dsv4-flash-single-npu-moe-offload
 ```
 
-如果源码由 Git clone 获得，确认版本：
-
-```bash
-git -C "$REPO" rev-parse --short HEAD
-git -C "$REPO/third_party/sglang" rev-parse --short HEAD
-git -C "$REPO/third_party/llama.cpp" rev-parse --short HEAD
-```
-
-预期：
-
-```text
-d7b5b49
-298193eb3
-a94e6ff
-```
-
-如果源码来自官网 ZIP，跳过这三条 `rev-parse`；ZIP 没有 `.git` 元数据。先执行 §7 的非 Git 结构检查，再继续。镜像里的 `git apply` 可以给普通目录应用补丁。
+源码全部来自官网固定 ZIP，没有版本历史元数据。先执行 §7 的结构检查，再继续。`apply_all.sh` 会使用镜像内已有的补丁工具处理普通目录，不需要连接任何远程仓库。
 
 应用补丁：
 
@@ -1257,13 +1139,25 @@ results/concurrency/
 
 ## 19. GPQA-Diamond
 
-模型功能和吞吐通过后才安装：
+联网电脑提前下载 `evalscope` 及其全部依赖 wheel，并手工上传到：
 
-```bash
-pip install evalscope
+```text
+/home/mem/dsv4/packages/wheels/
 ```
 
-内网环境应提前准备 evalscope 及其依赖 wheel，或者在能够访问内网 PyPI 的环境安装。
+容器启动后，由宿主机把 wheel 目录复制进容器：
+
+```bash
+docker cp /home/mem/dsv4/packages/wheels/. dsv4-npu5:/tmp/evalscope-wheels/
+```
+
+然后在容器内完全离线安装：
+
+```bash
+pip install --no-index --find-links /tmp/evalscope-wheels evalscope
+```
+
+安装过程如果试图访问公网，说明 wheel 依赖不完整，应回到联网电脑补齐，不能在服务器临时联网安装。
 
 运行：
 

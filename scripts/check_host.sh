@@ -10,7 +10,7 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 DATA_ROOT="${DATA_ROOT:-/data/dsv4}"
-NPU_IDS="${NPU_IDS:-3,5,6}"
+NPU_IDS="${NPU_IDS:-3,5}"
 MIN_MEM_GIB="${MIN_MEM_GIB:-160}"
 MIN_DISK_GIB="${MIN_DISK_GIB:-600}"
 failures=0
@@ -107,4 +107,4 @@ if (( failures > 0 )); then
   exit 1
 fi
 
-printf '[RESULT] 基础验机通过。三实例前仍需确认可用 DDR >= 640 GiB。\n'
+printf '[RESULT] 基础验机通过。双实例前仍需确认可用 DDR >= 384 GiB，建议 >= 512 GiB。\n'

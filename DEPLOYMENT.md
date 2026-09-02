@@ -4,13 +4,13 @@
 
 目标硬件：
 
-- 3 × Ascend 910B2（64 GiB HBM），先用物理卡 3 做单卡实验。
+- 2 × Ascend 910B2（64 GiB HBM），物理设备号为 3 和 5；先用物理卡 3 做单卡实验。
 - Kunpeng-920，aarch64，256 核，8 NUMA，支持 `asimddp`/SDOT。
 - 宿主机安装 Ascend 驱动和固件；CANN、PyTorch NPU、框架及自定义算子位于容器。
 
 采用 CANN Recipes 的单 NPU + CPU MoE offload 路径：Attention、Router、Shared Expert 和热 Routed Experts 在 NPU 上以 W8A8 计算，其余 Routed Experts 在 CPU 上读取原生 MXFP4 GGUF 计算。
 
-当前交付是单发路径，单实例通常固定 `--max-running-requests 1`。客户端并发 100 主要测排队；三卡启动三个独立实例时，最多约 3 条请求同时 decode。它不是原生 100 序列 batching。
+当前交付是单发路径，单实例通常固定 `--max-running-requests 1`。客户端并发 100 主要测排队；两卡启动两个独立实例时，最多约 2 条请求同时 decode。它不是原生 100 序列 batching。
 
 ## 2. 仓库原则
 
@@ -96,7 +96,7 @@ bash scripts/check_host.sh .env
 | CPU | ARMv8.2-A + NEON dotprod/SDOT |
 | NPU | 单张 64 GiB 910B2 |
 
-三实例会共同争抢 DDR，建议至少 640 GiB 可用内存，最好 768 GiB 或更高。Linux page cache 可能共享部分只读 GGUF 页面，但运行时转换、NUMA 本地缓存和三个进程仍可能产生额外内存占用，不能按单实例简单估算。
+双实例会共同争抢 DDR，建议至少 384 GiB 可用内存，最好 512 GiB 或更高。Linux page cache 可能共享部分只读 GGUF 页面，但运行时转换、NUMA 本地缓存和两个进程仍可能产生额外内存占用，不能按单实例简单估算。
 
 宿主机不要求安装 CANN Toolkit 或算子库，但必须满足：
 
@@ -288,24 +288,23 @@ numastat -p <SERVER_PID>
 
 910B早期单流 decode参考约13～16 token/s。提高客户端并发不会让单实例获得同等程度的计算并发；当输出吞吐趋于平坦而 TTFT/E2E持续增加时，说明请求正在排队。
 
-## 11. 三卡聚合
+## 11. 两卡聚合
 
-单卡稳定后，在物理卡3、5、6分别启动独立实例：
+单卡稳定后，在物理卡3和5分别启动独立实例：
 
 | 卡 | 端口 | `KT_CPUINFER` | `KT_THREADPOOL_COUNT` |
 |---:|---:|---:|---:|
-| 3 | 8020 | 64 | 8 |
-| 5 | 8021 | 64 | 8 |
-| 6 | 8022 | 64 | 8 |
+| 3 | 8020 | 96 | 8 |
+| 5 | 8021 | 96 | 8 |
 
-三个实例总工作线程先控制在192，避免各128线程造成384线程超订阅。
+两个实例总工作线程先控制在192，给系统和负载工具保留约64核；不要直接使用两个实例各128线程把256核全部占满。
 
-最大聚合吞吐测试可在三个端口同时运行负载，客户端并发分配为34/33/33，输出 token/s直接求和。真实入口延迟测试则在三个端口前配置 `least_conn`负载均衡，再对统一入口运行 `bench_serving.sh`。
+最大聚合吞吐测试可在两个端口同时运行负载，客户端并发分配为50/50，输出 token/s直接求和。真实入口延迟测试则在两个端口前配置 `least_conn`负载均衡，再对统一入口运行 `bench_serving.sh`。
 
-理想三卡线性值约39～48 token/s；DDR争抢后可能只有约25～40 token/s。该区间是容量规划预估，不是验收保证。计算扩展效率：
+理想两卡线性值约26～32 token/s；DDR争抢后可能只有约18～29 token/s。该区间是容量规划预估，不是验收保证。计算扩展效率：
 
 ```text
-三实例聚合输出 TPS / (3 × 单实例输出 TPS)
+双实例聚合输出 TPS / (2 × 单实例输出 TPS)
 ```
 
 若扩展效率低，优先排查 DDR带宽、远端 NUMA访问、swap、专家缓存复制和 CPU线程超订阅，而不是只看 NPU利用率。

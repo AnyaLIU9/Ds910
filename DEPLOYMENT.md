@@ -264,9 +264,36 @@ bash scripts/bench_serving.sh .env
 ```text
 input=1024 tokens
 output=128 tokens
-concurrency=1,3,10,30,100
+concurrency=5,10,80
 prompts=200
 ```
+
+如果负载机没有 vLLM 客户端，可以改用仓库中只依赖 Python 3 标准库的独立脚本。一次只跑一个档位：
+
+```bash
+python3 scripts/bench_concurrency.py \
+  --base-url http://127.0.0.1:8020 \
+  --model DeepSeek-V4-Flash \
+  --concurrency 5 \
+  --requests 20 \
+  --max-tokens 128
+
+python3 scripts/bench_concurrency.py \
+  --base-url http://127.0.0.1:8020 \
+  --model DeepSeek-V4-Flash \
+  --concurrency 10 \
+  --requests 20 \
+  --max-tokens 128
+
+python3 scripts/bench_concurrency.py \
+  --base-url http://127.0.0.1:8020 \
+  --model DeepSeek-V4-Flash \
+  --concurrency 80 \
+  --requests 80 \
+  --max-tokens 128
+```
+
+脚本统计精确的聚合输出 tok/s、总 tok/s、request/s、成功率以及 E2E/TTFT/TPOT 分位数，JSON 结果写入 `results/concurrency/`。如果服务没有返回 OpenAI `usage`，tok/s 会显示 `N/A`，不会使用不准确的文本或 SSE 块估算。并发80对当前单发服务主要测排队和聚合吞吐，不代表80路同时 decode。
 
 必须记录：
 
@@ -337,7 +364,34 @@ bash scripts/run_gpqa.sh .env
 
 GPQA-Diamond只有198题，单次结果存在明显抽样波动；应比较三轮均值和标准差，不要求逐轮完全相同。每轮必须确认报告样本数为198、无空回复、无超时。
 
-## 13. 结果归档
+## 13. 停止服务和删除实验容器
+
+模型服务在前台时先按 `Ctrl+C`。回到宿主机，先用精确名称确认目标：
+
+```bash
+CONTAINER_NAME=dsv4-npu5  # 按实际容器名修改
+docker ps -a --filter "name=^/${CONTAINER_NAME}$"
+docker stop --time 60 "$CONTAINER_NAME"
+```
+
+停止不会删除容器。需要恢复检查时：
+
+```bash
+docker start "$CONTAINER_NAME"
+docker exec -it "$CONTAINER_NAME" bash
+```
+
+模型服务通常需要进入容器重新执行启动命令。确定不再需要容器后才删除：
+
+```bash
+docker stop --time 60 "$CONTAINER_NAME" 2>/dev/null || true
+docker rm "$CONTAINER_NAME"
+docker ps -a --filter "name=^/${CONTAINER_NAME}$"
+```
+
+最后一条应无输出。删除容器不会删除绑定挂载的模型、源码、GGUF和日志，也不会删除基础/派生镜像。不要使用模糊名称、通配符或批量删除命令。
+
+## 14. 结果归档
 
 每次实验至少记录：
 

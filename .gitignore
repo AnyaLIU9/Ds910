@@ -1,6 +1,8 @@
 .DS_Store
 .env
 .cache/
+__pycache__/
+*.pyc
 
 # Large or generated deployment assets
 artifacts/

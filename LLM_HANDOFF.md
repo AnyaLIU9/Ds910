@@ -389,7 +389,7 @@ bash scripts/bench_serving.sh .env
 input=1024
 output=128
 prompts=200
-concurrency=1,3,10,30,100
+concurrency=5,10,80
 temperature=0
 ```
 
@@ -493,8 +493,8 @@ Docker image digest
 GGUF验证结果
 全部KT环境变量
 单卡C=1性能
-单实例C=100排队性能
-双实例C=100聚合性能
+单实例C=80排队性能
+双实例C=80聚合性能
 GPQA三轮结果
 错误、偏差和未完成项
 ```

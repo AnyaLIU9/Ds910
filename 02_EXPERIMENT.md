@@ -325,7 +325,19 @@ bash tools/launch_ds4flash_npu.sh \
   2>&1 | tee /workspace/code/logs/serve-single-npu.log
 ```
 
-这个命令必须前台运行。保持该终端不要关，另开一个 SSH 终端做下面的测试。
+首次复现时让这个命令保持在当前容器终端前台，另开一个 SSH 终端做下面的测试。这样可以直接看到首次 AscendC 编译、NPU graph、worker 异常和完整日志。
+
+这里要求“前台”的是**容器内的模型主进程**，不是说 Docker 永远不能在宿主机后台运行。当前容器启动脚本使用 `docker run --rm -it ... bash`，是为了方便首次补丁、编译、转换和排错。不要在这个交互式 bash 中简单执行 `nohup ... &` 后退出：bash 是容器主进程，它退出后 `--rm` 会删除容器；SGLang 的父进程上下文被回收时也可能出现 `main process disappeared`。
+
+稳定部署可以改成下面的进程关系，但这不是本轮首次复现步骤：
+
+```text
+宿主机：Docker 容器以 -d 运行
+容器 PID 1：launch_ds4flash_npu.sh 前台运行，并 exec 到 sglang.launch_server
+子进程：SGLang scheduler、worker 和 NPU 相关进程
+```
+
+这种方式使用 `docker logs -f <容器名>` 看日志，使用 `docker stop --time 60 <容器名>` 停止整套服务。不要只按一个宿主机 PID 执行 `kill`，否则可能遗漏 SGLang 子进程、共享内存和 NPU worker。
 
 ## 11. 测试顺序
 
@@ -421,6 +433,8 @@ bash tools/gpqa_accuracy_repeat.sh
 
 ## 12. 停止
 
-模型服务所在终端按 `Ctrl+C`，然后输入 `exit`。启动脚本使用 `docker run --rm`，退出容器后容器会自动删除；`/home/mem/dsv4` 下的代码、权重、GGUF、日志和结果不会删除。
+按本文首次复现方式运行时，在模型服务终端按 `Ctrl+C`，然后输入 `exit`。启动脚本使用 `docker run --rm`，退出容器后容器会自动删除；`/home/mem/dsv4` 下的代码、权重、GGUF、日志和结果不会删除。
+
+如果后续改成后台容器，应在宿主机执行 `docker stop --time 60 <容器名>`，不需要查找或手工杀模型 PID。
 
 下次继续实验时不需要重新 `docker load`、构建镜像、打补丁、编译或转换 GGUF，只需重新执行第 5、6、10 步。

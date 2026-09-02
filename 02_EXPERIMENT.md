@@ -1,6 +1,6 @@
 # DeepSeek-V4-Flash 单卡实验：服务器操作
 
-本文从这个状态开始：**代码、权重和 deb 已经解压并上传，Docker 基础镜像已经 `docker load`**。最终目录不保存 ZIP、tar 或 tar.gz。
+本文从这个状态开始：**代码、权重和 deb 已经解压并上传；Docker 镜像 tar 已放进 `packages/`，但还没有执行 `docker load`**。除这个镜像 tar 外，实验目录不保存其他 ZIP、tar 或 tar.gz。
 
 命令标注“宿主机”的就在服务器 shell 执行；标注“容器内”的要进入容器后执行。
 
@@ -25,6 +25,8 @@ dsv4-npu5                                   一次运行出来的容器
 
 ```text
 /home/mem/dsv4/
+├── packages/
+│   └── deepseek-v4-npu-910b-arm64.tar          # 唯一保留的压缩包
 ├── code/
 │   ├── cann-recipes-infer/
 │   │   └── integration/sglang/dsv4-flash-single-npu-moe-offload/
@@ -88,16 +90,32 @@ ls -l "/dev/davinci${NPU_ID}" \
   /dev/davinci_manager /dev/devmm_svm /dev/hisi_hdc
 ```
 
-检查基础镜像：
+## 2. 导入 Docker 基础镜像
+
+这是第一次部署必须执行的启动步骤。宿主机先校验 tar：
+
+```bash
+cd /home/mem/dsv4/packages
+echo 'cfdb04294636003f6638425df999b4c13b89079356ca6d8f8618abec07c0bbdf  deepseek-v4-npu-910b-arm64.tar' \
+  | sha256sum -c -
+```
+
+必须显示 `OK`。然后导入：
+
+```bash
+docker load -i /home/mem/dsv4/packages/deepseek-v4-npu-910b-arm64.tar
+```
+
+导入完成后检查：
 
 ```bash
 docker image inspect lmsysorg/sglang:deepseek-v4-npu-910b \
   --format 'arch={{.Architecture}} id={{.Id}}'
 ```
 
-必须看到 `arch=arm64`。如果显示 `No such image`，说明还没导入镜像：回到 `01_DOWNLOADS.md`，把 tar 临时上传后执行 `docker load -i deepseek-v4-npu-910b-arm64.tar`。导入成功后可以删除 tar，不要把它放进最终实验目录。
+必须看到 `arch=arm64`。`packages/` 中只保留这个镜像 tar，不要再放代码 ZIP、模型压缩包或其他传输包。
 
-## 2. 检查上传目录
+## 3. 检查上传目录
 
 宿主机执行：
 
@@ -140,7 +158,7 @@ PY
 
 两行都必须显示“缺失 0”。
 
-## 3. 构建本实验使用的派生镜像
+## 4. 构建本实验使用的派生镜像
 
 宿主机执行：
 
@@ -161,7 +179,7 @@ docker run --rm --entrypoint /bin/bash \
 
 最后应输出 `2.7.0`。到这里，`dsv4-offload-env:cann85-910b2` 才真正存在；它不是提前下载的另一个文件。
 
-## 4. 选择一张卡并进入容器
+## 5. 选择一张卡并进入容器
 
 宿主机执行。使用物理卡 5：
 
@@ -179,7 +197,7 @@ bash /home/mem/dsv4/code/scripts/start_single_npu_container.sh
 
 命令成功后会直接进入容器。脚本同时生成 `/workspace/code/dsv4_runtime.env`，后续不需要再次手写卡号。
 
-## 5. 容器内检查
+## 6. 容器内检查
 
 ```bash
 source /workspace/code/dsv4_runtime.env
@@ -202,7 +220,7 @@ PY
 
 `available` 必须为 `True`。`NPU_DEVICE_ID` 是宿主机物理卡号；`ASCEND_RT_VISIBLE_DEVICES` 会让进程内部把这张卡当作逻辑卡 0。
 
-## 6. 应用补丁（只执行一次）
+## 7. 应用补丁（只执行一次）
 
 容器内执行：
 
@@ -219,7 +237,7 @@ touch "$REPO/.dsv4_patch_applied"
 
 如果第一条 `test` 失败，说明已经打过补丁，不要再执行 `apply_all.sh`。
 
-## 7. 编译 kt-kernel
+## 8. 编译 kt-kernel
 
 容器内执行：
 
@@ -241,7 +259,7 @@ export PYTHONPATH="$REPO/third_party/sglang/python:$REPO/kt-kernel${PYTHONPATH:+
 
 最后必须输出 `kt_kernel OK`。
 
-## 8. 把 CPU 权重转换成 43 个 GGUF
+## 9. 把 CPU 权重转换成 43 个 GGUF
 
 这一步只做一次，约生成 138 GiB。容器内执行：
 
@@ -273,7 +291,7 @@ find "$GGUF_CACHE" -maxdepth 1 -name 'dsv4_layer*_mxfp4.gguf' | wc -l
 
 文件数必须为 `43`，全集校验必须通过。校验前不要删除原始 `DeepSeek-V4-Flash` 权重。
 
-## 9. 预检并启动服务
+## 10. 预检并启动服务
 
 容器内执行：
 
@@ -307,9 +325,9 @@ bash tools/launch_ds4flash_npu.sh \
 
 这个命令必须前台运行。保持该终端不要关，另开一个 SSH 终端做下面的测试。
 
-## 10. 测试顺序
+## 11. 测试顺序
 
-### 10.1 先测服务能不能回答
+### 11.1 先测服务能不能回答
 
 新宿主机终端执行：
 
@@ -323,7 +341,7 @@ curl -sS -X POST http://127.0.0.1:8020/generate \
 
 能连贯回答“北京”，且服务不退出，才做性能测试。
 
-### 10.2 单请求 decode 吞吐
+### 11.2 单请求 decode 吞吐
 
 新宿主机终端进入同一容器：
 
@@ -342,7 +360,7 @@ TARGET_TOKENS_LIST="130 1000 8000" MAX_NEW=1000 REPEAT=3 WARMUP=1 \
 
 先看 130/1k/8k 三档。结果中的稳态 `tok/s` 才是单请求 decode 速度，第一轮 warmup 不计入结论。
 
-### 10.3 并发 5、10、80 的聚合吞吐
+### 11.3 并发 5、10、80 的聚合吞吐
 
 宿主机执行：
 
@@ -363,7 +381,7 @@ python3 /home/mem/dsv4/code/scripts/bench_concurrency.py \
 
 重点看：成功率、`aggregate completion tok/s`、TTFT p95 和 E2E p95。当前服务固定 `--max-running-requests 1`，所以并发 80 主要是在测排队和聚合吞吐，不代表 80 条序列同时 decode。
 
-### 10.4 GPQA-Diamond 准确率
+### 11.4 GPQA-Diamond 准确率
 
 GPQA 最后做。先确保容器内已经离线安装 EvalScope，并且官方 GPQA 数据已按 EvalScope 离线文档放入缓存。然后在容器内执行：
 
@@ -378,8 +396,8 @@ bash tools/gpqa_accuracy_repeat.sh
 
 先跑 3 轮验证流程，再决定是否跑默认 10 轮。只和相同 prompt、sampling、reasoning mode 的结果比较，不能拿不同评测协议的官方分数直接判断部署精度。
 
-## 11. 停止
+## 12. 停止
 
 模型服务所在终端按 `Ctrl+C`，然后输入 `exit`。启动脚本使用 `docker run --rm`，退出容器后容器会自动删除；`/home/mem/dsv4` 下的代码、权重、GGUF、日志和结果不会删除。
 
-下次继续实验时不需要重新打补丁、编译或转换 GGUF，只需重新执行第 4、5、9 步。
+下次继续实验时不需要重新 `docker load`、构建镜像、打补丁、编译或转换 GGUF，只需重新执行第 5、6、10 步。

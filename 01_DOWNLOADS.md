@@ -26,7 +26,13 @@ docker save -o deepseek-v4-npu-910b-arm64.tar \
 shasum -a 256 deepseek-v4-npu-910b-arm64.tar
 ```
 
-这个 tar 只用于传输。服务器执行 `docker load` 后，镜像进入 Docker 自己的存储，可以删除 tar。
+把这个 tar 上传到：
+
+```text
+/home/mem/dsv4/packages/deepseek-v4-npu-910b-arm64.tar
+```
+
+服务器实验流程会先校验它，再执行 `docker load`。导入后镜像进入 Docker 自己的存储；tar 可以继续留在 `packages/` 作为离线备份。
 
 ## 2. 两份模型权重
 

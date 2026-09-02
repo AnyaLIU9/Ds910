@@ -381,6 +381,27 @@ python3 /home/mem/dsv4/code/scripts/bench_concurrency.py \
   --output-dir /home/mem/dsv4/results/concurrency
 ```
 
+脚本会在终端打印汇总表，同时把三档结果分别保存为 JSON。例如一次运行时间是 `20260903-013000`，会生成：
+
+```text
+/home/mem/dsv4/results/concurrency/bench-20260903-013000-c5.json
+/home/mem/dsv4/results/concurrency/bench-20260903-013000-c10.json
+/home/mem/dsv4/results/concurrency/bench-20260903-013000-c80.json
+```
+
+每个 JSON 都包含该档位的配置、汇总指标以及每条请求的成功状态、E2E、TTFT、TPOT 和 token 数。查看文件：
+
+```bash
+ls -lht /home/mem/dsv4/results/concurrency/
+```
+
+查看最新一次并发 80 的完整结果：
+
+```bash
+LATEST=$(ls -t /home/mem/dsv4/results/concurrency/bench-*-c80.json | head -n 1)
+python3 -m json.tool "$LATEST" | less
+```
+
 重点看：成功率、`aggregate completion tok/s`、TTFT p95 和 E2E p95。当前服务固定 `--max-running-requests 1`，所以并发 80 主要是在测排队和聚合吞吐，不代表 80 条序列同时 decode。
 
 ### 11.4 GPQA-Diamond 准确率

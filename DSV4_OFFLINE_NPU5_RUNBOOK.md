@@ -1,4 +1,4 @@
-# DeepSeek-V4-Flash：`/home/mem` 最终目录与 NPU 5 单卡部署 Runbook
+# DeepSeek-V4-Flash：`/home/mem` 最终目录与可选 NPU 单卡部署 Runbook
 
 本文是本次实验的主操作说明。后续按本文执行，不再混用 A3、0731、vLLM-Ascend 或其他模型的部署命令。
 
@@ -6,7 +6,7 @@
 
 - 服务器：aarch64，Kunpeng-920，256 CPU 核，8 NUMA
 - NPU：Ascend 910B2
-- 第一阶段只使用物理 NPU 5
+- 第一阶段只使用一张物理 NPU；默认示例为 NPU 5，可通过 `NPU_ID` 更换
 - 宿主机只需要驱动、固件和 Docker
 - 容器使用 CANN 8.5.0 的 DSV4 指定镜像
 - 推理框架：打过交付补丁的 SGLang + KTransformers/kt-kernel
@@ -26,7 +26,7 @@
 - Docker 19.03 已经很老；如果以后把服务长期对外提供，应安排升级。但这和本次离线复现实验能否启动是两件事。
 - 推荐使用普通 rootful Docker，不使用 rootless Docker。
 - 不需要 NVIDIA Container Runtime。
-- 交付脚本通过 `--device` 映射 Ascend 设备，因此必须能够映射 `/dev/davinci5`、`/dev/davinci_manager`、`/dev/devmm_svm` 和 `/dev/hisi_hdc`。
+- 交付脚本通过 `--device` 映射 Ascend 设备，因此必须能够映射所选的 `/dev/davinci<NPU_ID>`、`/dev/davinci_manager`、`/dev/devmm_svm` 和 `/dev/hisi_hdc`。
 
 服务器检查：
 
@@ -276,7 +276,7 @@ scripts/tools/*
 │       ├── kt-kernel-build.log                 # 编译时生成
 │       ├── mxfp4-convert.log                   # 转换时生成
 │       ├── gguf-verify.log                     # 校验时生成
-│       └── serve-npu5.log                      # 启动服务时生成
+│       └── serve-single-npu.log                 # 启动服务时生成
 │
 └── models/
     ├── DeepSeek-V4-Flash-W8A8/
@@ -761,7 +761,13 @@ PY
 
 ---
 
-## 9. 检查物理 NPU 5
+## 9. 选择并检查物理 NPU
+
+物理卡编号只有一个统一入口：`NPU_ID`。默认使用卡 5；换成卡 3 时，只把下面第一行改成 `export NPU_ID=3`：
+
+```bash
+export NPU_ID=5
+```
 
 ```bash
 npu-smi info
@@ -769,38 +775,40 @@ npu-smi info
 
 ```bash
 ls -l \
-  /dev/davinci5 \
+  "/dev/davinci${NPU_ID}" \
   /dev/davinci_manager \
   /dev/devmm_svm \
   /dev/hisi_hdc
 ```
 
-确认 NPU 5 没有被其他任务占用，再启动容器。
+在 `npu-smi info` 中确认这张物理卡没有被其他任务占用，再启动容器。`NPU_ID` 是宿主机物理编号，不是容器内模型使用的编号。
 
 ---
 
-## 10. 启动物理 NPU 5 构建容器
+## 10. 启动所选物理 NPU 的构建容器
+
+推荐使用 Ds910 仓中的统一入口脚本。先把它放到服务器的 `/home/mem/dsv4/code/scripts/`，然后执行：
 
 ```bash
 export DSV4_ROOT=/home/mem/dsv4
-export RELEASE_DIR="$DSV4_ROOT/code/cann-recipes-infer/integration/sglang/dsv4-flash-single-npu-moe-offload"
+export NPU_ID=5    # 换卡只改这里，例如改成 3
 ```
 
 ```bash
-WORKSPACE="$DSV4_ROOT/code" \
-MODEL_DIR="$DSV4_ROOT/models" \
-IMAGE=dsv4-offload-env:cann85-910b2 \
-NAME=dsv4-npu5 \
-SERVICE_PORT=8020 \
-SHM_SIZE=64g \
-NPU_VISIBLE_DEVICES=5 \
-bash "$RELEASE_DIR/scripts/launch_dsv4_singleCard_cann8.5.0_910b.sh"
+bash "$DSV4_ROOT/code/scripts/start_single_npu_container.sh"
 ```
 
-进入容器：
+该脚本会自动完成下面的对应关系：
+
+```text
+NPU_ID=5  -> /dev/davinci5 -> 容器名 dsv4-npu5
+NPU_ID=3  -> /dev/davinci3 -> 容器名 dsv4-npu3
+```
+
+交付脚本使用前台交互方式启动，成功后当前终端会直接进入容器，不需要再执行 `docker exec`。如果另开终端进入同一个容器，可执行：
 
 ```bash
-docker exec -it dsv4-npu5 bash
+docker exec -it "dsv4-npu${NPU_ID}" bash
 ```
 
 容器内检查：
@@ -834,7 +842,7 @@ available: True
 custom_ops: OK
 ```
 
-物理卡 5 被单独映射后，容器通常将其表示为逻辑卡 0。后续使用 `NPU_DEVICE_ID=0`。
+所选物理卡被单独映射后，容器通常将它表示为逻辑卡 0。后续模型启动仍使用 `NPU_DEVICE_ID=0`，不要把这里改成宿主机的 `NPU_ID`。如果容器内检查结果与此不同，才按容器内实际逻辑编号调整。
 
 ---
 
@@ -1006,9 +1014,9 @@ echo $?
 
 ---
 
-## 15. 启动物理 NPU 5 的单卡服务
+## 15. 启动所选 NPU 的单卡服务
 
-由于容器只映射物理卡 5，这里使用逻辑卡 0：
+由于容器只映射了一张物理卡，这里使用容器内逻辑卡 0：
 
 ```bash
 cd "$REPO"
@@ -1025,7 +1033,7 @@ KT_CPUINFER=128 \
 KT_NUM_GPU_EXPERTS=32 \
 CHUNKED_PREFILL_SIZE=32768 \
 bash tools/launch_ds4flash_npu.sh \
-  2>&1 | tee /workspace/code/logs/serve-npu5.log
+  2>&1 | tee /workspace/code/logs/serve-single-npu.log
 ```
 
 注意：
@@ -1033,7 +1041,7 @@ bash tools/launch_ds4flash_npu.sh \
 - 服务保持前台运行。
 - graph 模式保持默认，不加 `--disable-cuda-graph`。
 - 第一轮不要并发发送请求。
-- 如果容器没有将物理卡 5 重映射成逻辑卡 0，以容器内实际编号修改 `NPU_DEVICE_ID`。
+- 如果容器没有将所选物理卡重映射成逻辑卡 0，以容器内实际编号修改 `NPU_DEVICE_ID`。
 
 ---
 
@@ -1063,7 +1071,7 @@ curl -sS -X POST http://127.0.0.1:8020/generate \
 检查吞吐日志：
 
 ```bash
-grep 'gen throughput' /home/mem/dsv4/code/logs/serve-npu5.log
+grep 'gen throughput' /home/mem/dsv4/code/logs/serve-single-npu.log
 ```
 
 ---
@@ -1153,7 +1161,7 @@ results/concurrency/
 容器启动后，由宿主机把 wheel 目录复制进容器：
 
 ```bash
-docker cp /home/mem/dsv4/packages/wheels/. dsv4-npu5:/tmp/evalscope-wheels/
+docker cp /home/mem/dsv4/packages/wheels/. "dsv4-npu${NPU_ID}:/tmp/evalscope-wheels/"
 ```
 
 然后在容器内完全离线安装：
@@ -1179,36 +1187,29 @@ bash tools/gpqa_accuracy_repeat.sh
 
 ## 20. 停止服务、停止容器和删除容器
 
-如果服务正在当前终端前台运行，先按 `Ctrl+C`，这只停止模型服务。然后回到宿主机执行：
+如果服务正在当前终端前台运行，先按 `Ctrl+C`，这只停止模型服务。另开宿主机终端，使用启动时相同的 `NPU_ID`：
 
 ```bash
-docker ps -a --filter 'name=^/dsv4-npu5$'
-docker stop --time 60 dsv4-npu5
+export NPU_ID=5
+export CONTAINER_NAME="dsv4-npu${NPU_ID}"
+docker ps -a --filter "name=^/${CONTAINER_NAME}$"
+docker stop --time 60 "$CONTAINER_NAME"
 ```
 
-`docker stop` 不删除容器。以后需要继续检查容器文件时可以启动并进入：
+当前交付启动脚本使用了 Docker 的 `--rm`，因此容器停止后会自动删除；模型、代码和日志都在宿主机挂载目录中，不会被删除。下次继续实验时，设置同一个或新的 `NPU_ID`，重新运行统一入口脚本：
 
 ```bash
-docker start dsv4-npu5
-docker exec -it dsv4-npu5 bash
+export NPU_ID=5
+bash /home/mem/dsv4/code/scripts/start_single_npu_container.sh
 ```
 
-注意：`docker start` 只恢复容器，不保证模型服务自动重新拉起；需要进入容器重新执行 §15 的启动命令。
-
-确定不再需要这个容器后，再删除：
+停止后的验收：
 
 ```bash
-docker stop --time 60 dsv4-npu5 2>/dev/null || true
-docker rm dsv4-npu5
+docker ps -a --filter "name=^/${CONTAINER_NAME}$"
 ```
 
-验收：
-
-```bash
-docker ps -a --filter 'name=^/dsv4-npu5$'
-```
-
-应没有结果。不要使用模糊名称、通配符或批量 `docker rm`。删除容器不会删除绑定挂载的 `/home/mem/dsv4/models`、`code`、`logs` 和 GGUF；也不会删除 `dsv4-offload-env:cann85-910b2` 镜像。
+应没有结果。不要使用模糊名称、通配符或批量 `docker rm`。停止容器不会删除绑定挂载的 `/home/mem/dsv4/models`、`code`、`logs` 和 GGUF，也不会删除 `dsv4-offload-env:cann85-910b2` 镜像。
 
 ---
 
@@ -1247,7 +1248,7 @@ docker ps -a --filter 'name=^/dsv4-npu5$'
   ↓
 检查两份权重分片齐全
   ↓
-映射物理 NPU 5 启动容器
+通过 `NPU_ID` 映射所选物理 NPU 启动容器
   ↓
 apply_all.sh
   ↓

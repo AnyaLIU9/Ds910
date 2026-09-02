@@ -67,21 +67,35 @@ KTransformers ZIP 不带子模块内容，所以它里面的 `third_party/` 出�
 
 ## 4. `hwloc` 离线依赖
 
-这些 deb **不是安装到 Mac 本机，也不是安装到测试服务器宿主机**。Mac 只负责暂存和上传文件。
+仓库已经提供打好的 ARM64 Ubuntu 22.04 离线包：
 
-联网 Mac 上已经准备好这个目录：
+- [dsv4-hwloc-arm64-debs.tar.gz](./dsv4-hwloc-arm64-debs.tar.gz)
+- [SHA-256 校验文件](./dsv4-hwloc-arm64-debs.tar.gz.sha256)
+- SHA-256：`cb56838be69bd4b398b9a81a8f87f7b363247ad04d16c5d250772a2e1925b325`
+
+包内只有 17 个 deb。它们**不是安装到 Mac 本机，也不是安装到测试服务器宿主机**。
+
+最简单的做法是在 Mac 解压，然后只把解压目录中的 17 个 `.deb` 上传到测试服务器：
 
 ```text
-/Users/lyy/Downloads/dsv4-hwloc-arm64-debs/
+Mac 解压得到：dsv4-hwloc-arm64-debs/*.deb
+服务器放到：/home/mem/dsv4/image/debs/*.deb
 ```
 
-里面应有 17 个 ARM64 Ubuntu 22.04 `.deb` 文件。把这 17 个文件原样上传到测试服务器：
+如果选择把压缩包传到服务器再解压，先临时放到 `/home/mem/dsv4/image/`，然后在服务器执行：
 
-```text
-/home/mem/dsv4/image/debs/
+```bash
+cd /home/mem/dsv4/image
+sha256sum -c dsv4-hwloc-arm64-debs.tar.gz.sha256
+mkdir -p debs
+tar -xzf dsv4-hwloc-arm64-debs.tar.gz \
+  -C debs --strip-components=1
+find debs -maxdepth 1 -name '*.deb' | wc -l
 ```
 
-后续在测试服务器执行 `docker build` 时，`image/Dockerfile` 才会把它们安装进 `dsv4-offload-env:cann85-910b2` 派生镜像。不要在 Mac 或服务器宿主机执行 `dpkg -i`，也不要单独下载一个 `libhwloc.so`。
+最后必须显示 `17`。确认后删掉临时的 `dsv4-hwloc-arm64-debs.tar.gz` 和校验文件，最终只留下 `/home/mem/dsv4/image/debs/*.deb`；这样 `packages/` 仍然只有 Docker 镜像 tar。
+
+后续执行 `docker build` 时，`image/Dockerfile` 才会把这些 deb 安装进 `dsv4-offload-env:cann85-910b2` 派生镜像。不要在 Mac 或服务器宿主机执行 `dpkg -i`，也不要单独下载一个 `libhwloc.so`。
 
 ```text
 Mac 暂存目录

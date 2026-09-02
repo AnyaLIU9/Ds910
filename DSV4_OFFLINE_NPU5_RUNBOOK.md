@@ -120,7 +120,7 @@ Docker 版本和 CANN 版本不是一回事：Docker 负责容器和设备映射
 | ktransformers `d7b5b49` | 已下载 | 必须 |
 | sglang `298193eb3` | 已下载 | 必须 |
 | llama.cpp `a94e6ff` | 已下载 | 必须 |
-| 完整 `cann-recipes-infer` 交付目录 | **需要确认/下载** | 必须 |
+| 完整 `cann-recipes-infer` 固定版本 ZIP | 已从本地固定提交生成并放入 Ds910 | 必须 |
 | pybind11 `bb05e081...` | **需要确认/下载** | 必须 |
 | custom_flashinfer `fd94393f...` | **需要确认/下载** | 必须 |
 | evalscope | 暂时不用下载 | GPQA 时才需要 |
@@ -129,14 +129,13 @@ Docker 版本和 CANN 版本不是一回事：Docker 负责容器和设备映射
 
 #### CANN Recipes 完整交付仓
 
-- 仓库：https://gitcode.com/cann/cann-recipes-infer
-- 对应 DSV4 完整功能合并记录：https://gitcode.com/cann/cann-recipes-infer/pull/682
 - 固定短 SHA：`1a7fbd34`
 - 固定完整 SHA：`1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5`
-- 提交校验 API：https://gitcode.com/api/v5/repos/cann/cann-recipes-infer/commits/1a7fbd34
-- **固定版本 ZIP 直链**：https://gitcode.com/cann/cann-recipes-infer/-/archive/1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5/cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.zip
-- 固定版本 tar.gz 直链：https://gitcode.com/cann/cann-recipes-infer/-/archive/1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5/cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.tar.gz
-- 本实验固定使用上述提交，不下载会继续变化的 `master` ZIP。
+- Ds910 内的归档：`cann-recipes-infer-1a7fbd34.zip`
+- SHA-256 文件：`cann-recipes-infer-1a7fbd34.zip.sha256`
+- ZIP 字节数：`99066903`
+- ZIP SHA-256：`31995eadad4c99d59261f214bd091087b314c7b391967fb9ed729657eba6805b`
+- 归档由本地 `/Users/.../cann-recipes-infer` 的上述固定提交直接生成，不包含当前工作区改动，也不需要再访问 GitCode。
 - 设计文档位于 `docs/integration/sglang/dsv4-flash-single-npu-moe-offload/`，只用于阅读；真正要执行的补丁、转换器和启动脚本位于不带 `docs` 的 `integration/sglang/dsv4-flash-single-npu-moe-offload/`。
 - 本实验必须存在的目录：
 
@@ -163,7 +162,7 @@ scripts/tools/*
 - `c5cc95e`：A3/910C 从干净 CANN 9.0 镜像构建第三方融合算子时，由环境脚本钉住的一个算子源码版本；它不是本实验顶层交付仓应 checkout 的版本。
 - 当前机器是 910B2，并使用 CANN 8.5.0 专用镜像，因此不需要准备 `c5cc95e` 对应的另一份顶层源码。
 
-本实验只走手工离线路线：联网电脑通过上面的固定版本 ZIP 直链下载，随后把压缩包手工上传到服务器。不要打开 `tree/1a7fbd34`，也不要下载 `master`；GitCode archive 地址中的完整 40 位 SHA 才是版本锁定依据。
+本实验只走手工离线路线：从 Ds910 仓库下载已经打包好的 `cann-recipes-infer-1a7fbd34.zip` 和校验文件，随后手工上传到服务器。
 
 ```text
 /home/mem/dsv4/code/cann-recipes-infer/
@@ -245,6 +244,8 @@ scripts/tools/*
 ├── packages/
 │   ├── deepseek-v4-npu-910b-arm64.tar
 │   ├── deepseek-v4-npu-910b-arm64.tar.sha256
+│   ├── cann-recipes-infer-1a7fbd34.zip
+│   ├── cann-recipes-infer-1a7fbd34.zip.sha256
 │   ├── dsv4-code-bundle.tar.gz                 # 可选：自己制作的传输包，不是官方文件
 │   ├── wheels/                                 # GPQA 阶段才使用，可为空
 │   └── debs/                                   # 仅容器不能联网安装 hwloc 时准备
@@ -437,56 +438,34 @@ docker run --rm \
 
 KTransformers 的 GitHub ZIP **不会包含 Git 子模块内容**，所以解压后 `third_party/pybind11` 和 `third_party/custom_flashinfer` 为空是正常的；上表最后两个 ZIP 就是用来补这两个空目录的。SGLang 和 llama.cpp 也要用上表中的独立 ZIP 放进去。
 
-CANN Recipes 这样手工下载：
+CANN Recipes 不再从 GitCode 下载。直接从 Ds910 仓库下载这两个文件：
 
-1. 在联网电脑浏览器地址栏粘贴下面这条完整地址并回车：
+```text
+cann-recipes-infer-1a7fbd34.zip
+cann-recipes-infer-1a7fbd34.zip.sha256
+```
 
-   ```text
-   https://gitcode.com/cann/cann-recipes-infer/-/archive/1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5/cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.zip
-   ```
+它是本地源码仓固定提交 `1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5` 的完整归档，内部顶层目录已经固定为：
 
-2. 浏览器应下载：
+```text
+cann-recipes-infer/
+```
 
-   ```text
-   cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.zip
-   ```
+在联网电脑下载后先校验：
 
-3. 如果更喜欢 tar.gz，使用：
+```bash
+sha256sum -c cann-recipes-infer-1a7fbd34.zip.sha256
+unzip -l cann-recipes-infer-1a7fbd34.zip \
+  | grep 'cann-recipes-infer/integration/sglang/dsv4-flash-single-npu-moe-offload/apply_all.sh'
+```
 
-   ```text
-   https://gitcode.com/cann/cann-recipes-infer/-/archive/1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5/cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.tar.gz
-   ```
-
-4. 可以先打开下面的公开 API 地址确认短 SHA 对应的完整 SHA。JSON 中的 `sha` 必须为 `1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5`：
-
-   ```text
-   https://gitcode.com/api/v5/repos/cann/cann-recipes-infer/commits/1a7fbd34
-   ```
-
-5. 如果直链出现 GitCode `418/疑似攻击行为`，这是 GitCode WAF 拦截，不是提交不存在。先登录 GitCode 后重新打开同一条固定直链；也可以打开 `https://gitcode.com/cann/cann-recipes-infer/commit/1a7fbd34`，点击 `Browse files/浏览文件`，再点页面仓库区的 `ZIP`。仍被拦截时等待 WAF 恢复或换正常网络重试，不能改下 `master` 代替。
-
-6. 解压后先验证压缩包确实包含核心交付目录：
-
-   ```bash
-   unzip -l cann-recipes-infer-1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5.zip \
-     | grep 'integration/sglang/dsv4-flash-single-npu-moe-offload/apply_all.sh'
-   ```
-
-   必须能看到 `apply_all.sh`。真正需要的是不带 `docs/` 的 `integration/sglang/dsv4-flash-single-npu-moe-offload/`；`docs/...` 只有说明文字。
-
-7. 解压目录改名为 `cann-recipes-infer`，最终放到：
-
-   ```text
-   /home/mem/dsv4/code/cann-recipes-infer/
-   ```
-
-不要再下载 `master` ZIP。本实验的补丁和脚本必须来自固定提交 `1a7fbd348f4d8be4aecdb369d4b0fe89d433f5a5`。
+第一条必须显示 `OK`，第二条必须能看到 `apply_all.sh`。真正需要的是不带 `docs/` 的 `integration/sglang/dsv4-flash-single-npu-moe-offload/`；`docs/...` 只有说明文字。
 
 下载完成后，先在联网电脑上双击解压这六个 ZIP，再按下面结构整理。目录后面的长 SHA 是 GitHub 自动生成的解压目录名；先借它确认版本，再改成最终短名字：
 
 ```text
 dsv4-code-bundle/
-├── cann-recipes-infer/                         # GitCode ZIP 解压目录改名
+├── cann-recipes-infer/                         # Ds910 固定版本 ZIP 解压得到
 └── ktransformers-AK/                           # ktransformers-d7b5... 解压目录改名
     └── third_party/
         ├── pybind11/                           # pybind11-bb05... 的内容
@@ -618,15 +597,41 @@ cd /home/mem/dsv4/image
 docker build -t dsv4-offload-env:cann85-910b2 .
 ```
 
-再执行 §3.4 验收。你不需要额外下载一份完整的“派生镜像 tar”；派生镜像由现有基础镜像加 2.3 MiB 离线 deb 包现场生成。
+再执行 §3.2 验收。你不需要额外下载一份完整的“派生镜像 tar”；派生镜像由现有基础镜像加 2.3 MiB 离线 deb 包现场生成。
 
 ---
 
 ## 7. 服务器放置代码
 
-### 7.1 使用了自制代码包
+### 7.1 解压 Ds910 中的 CANN Recipes 固定版本包
 
-如果上一节制作了 `dsv4-code-bundle.tar.gz`，将它放到
+把这两个文件手工上传到 `/home/mem/dsv4/packages/`：
+
+```text
+cann-recipes-infer-1a7fbd34.zip
+cann-recipes-infer-1a7fbd34.zip.sha256
+```
+
+服务器校验并解压：
+
+```bash
+cd /home/mem/dsv4/packages
+sha256sum -c cann-recipes-infer-1a7fbd34.zip.sha256
+
+test ! -e /home/mem/dsv4/code/cann-recipes-infer || {
+  echo '目标目录已存在，请先人工检查，禁止覆盖'
+  exit 1
+}
+
+unzip -q cann-recipes-infer-1a7fbd34.zip \
+  -d /home/mem/dsv4/code
+```
+
+压缩包内部已经带 `cann-recipes-infer/` 顶层目录，因此不要再改名，也不要加 `--strip-components`。
+
+### 7.2 可选：使用合并后的代码传输包
+
+这是 §7.1 + §7.3 的替代路线，不要重复执行。如果联网电脑已经把 CANN Recipes 和 KTransformers 相关目录合并成 `dsv4-code-bundle.tar.gz`，将它放到
 `/home/mem/dsv4/packages/` 后执行：
 
 ```bash
@@ -640,7 +645,7 @@ tar -xzf dsv4-code-bundle.tar.gz \
   --strip-components=1
 ```
 
-### 7.2 没有制作代码包
+### 7.3 分别上传 KTransformers 相关目录
 
 如果两个目录是分别上传的，只需把它们放成：
 

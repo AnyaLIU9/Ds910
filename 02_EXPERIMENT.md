@@ -19,12 +19,12 @@ dsv4-offload-env:cann85-910b2               派生镜像：本实验真正使用
 dsv4-npu5                                   一次运行出来的容器
 ```
 
-`/home/mem/dsv4/image/` **不是存 Docker 镜像的地方**。它只是放 `Dockerfile` 和 deb 的构建目录。真正的镜像存在 Docker 的 `DockerRootDir`，通常是 `/var/lib/docker`。
+`/data/models/dsv4/image/` **不是存 Docker 镜像的地方**。它只是放 `Dockerfile` 和 deb 的构建目录。真正的镜像存在 Docker 的 `DockerRootDir`，通常是 `/var/lib/docker`。
 
 ## 0. 实验开始时目录必须是这样
 
 ```text
-/home/mem/dsv4/
+/data/models/dsv4/
 ├── packages/
 │   └── deepseek-v4-npu-910b-arm64.tar          # 唯一保留的压缩包
 ├── code/
@@ -82,7 +82,7 @@ docker system df
 - `uname -m` 是 `aarch64`；
 - 能在 `npu-smi info` 看到空闲的 910B2，例如物理卡 3 或 5；
 - Docker 能正常工作；
-- DockerRootDir 所在磁盘有足够空间。即使 `/home/mem` 很大，DockerRootDir 空间不足仍会构建失败，此时先找管理员迁移 Docker 数据目录。
+- DockerRootDir 所在磁盘有足够空间。即使 `/data/models` 很大，DockerRootDir 空间不足仍会构建失败，此时先找管理员迁移 Docker 数据目录。
 
 检查卡 5 的设备节点；换卡时改数字：
 
@@ -97,7 +97,7 @@ ls -l "/dev/davinci${NPU_ID}" \
 这是第一次部署必须执行的启动步骤。宿主机先校验 tar：
 
 ```bash
-cd /home/mem/dsv4/packages
+cd /data/models/dsv4/packages
 echo 'cfdb04294636003f6638425df999b4c13b89079356ca6d8f8618abec07c0bbdf  deepseek-v4-npu-910b-arm64.tar' \
   | sha256sum -c -
 ```
@@ -105,7 +105,7 @@ echo 'cfdb04294636003f6638425df999b4c13b89079356ca6d8f8618abec07c0bbdf  deepseek
 必须显示 `OK`。然后导入：
 
 ```bash
-docker load -i /home/mem/dsv4/packages/deepseek-v4-npu-910b-arm64.tar
+docker load -i /data/models/dsv4/packages/deepseek-v4-npu-910b-arm64.tar
 ```
 
 导入完成后检查：
@@ -122,7 +122,7 @@ docker image inspect lmsysorg/sglang:deepseek-v4-npu-910b \
 宿主机执行：
 
 ```bash
-export DSV4_ROOT=/home/mem/dsv4
+export DSV4_ROOT=/data/models/dsv4
 export REPO="$DSV4_ROOT/code/ktransformers-AK"
 export RELEASE_DIR="$DSV4_ROOT/code/cann-recipes-infer/integration/sglang/dsv4-flash-single-npu-moe-offload"
 
@@ -146,8 +146,8 @@ import json
 from pathlib import Path
 
 for root in map(Path, [
-    "/home/mem/dsv4/models/DeepSeek-V4-Flash-W8A8",
-    "/home/mem/dsv4/models/DeepSeek-V4-Flash",
+    "/data/models/dsv4/models/DeepSeek-V4-Flash-W8A8",
+    "/data/models/dsv4/models/DeepSeek-V4-Flash",
 ]):
     index = root / "model.safetensors.index.json"
     data = json.loads(index.read_text())
@@ -166,7 +166,7 @@ PY
 宿主机执行：
 
 ```bash
-cd /home/mem/dsv4/image
+cd /data/models/dsv4/image
 docker build -t dsv4-offload-env:cann85-910b2 .
 ```
 
@@ -188,14 +188,14 @@ docker run --rm --entrypoint /bin/bash \
 
 ```bash
 export NPU_ID=5
-bash /home/mem/dsv4/code/scripts/start_single_npu_container.sh
+bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
 ```
 
 改用物理卡 3 时只改为：
 
 ```bash
 export NPU_ID=3
-bash /home/mem/dsv4/code/scripts/start_single_npu_container.sh
+bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
 ```
 
 命令成功后会直接进入容器。脚本同时生成 `/workspace/code/dsv4_runtime.env`，后续不需要再次手写卡号。
@@ -386,32 +386,32 @@ curl -s http://127.0.0.1:8020/v1/models
 记下返回结果中的模型 `id`，下面用 `<MODEL_ID>` 替换：
 
 ```bash
-python3 /home/mem/dsv4/code/scripts/bench_concurrency.py \
+python3 /data/models/dsv4/code/scripts/bench_concurrency.py \
   --base-url http://127.0.0.1:8020 \
   --model '<MODEL_ID>' \
   --concurrency 5 10 80 \
   --max-tokens 128 \
-  --output-dir /home/mem/dsv4/results/concurrency
+  --output-dir /data/models/dsv4/results/concurrency
 ```
 
 脚本会在终端打印汇总表，同时把三档结果分别保存为 JSON。例如一次运行时间是 `20260903-013000`，会生成：
 
 ```text
-/home/mem/dsv4/results/concurrency/bench-20260903-013000-c5.json
-/home/mem/dsv4/results/concurrency/bench-20260903-013000-c10.json
-/home/mem/dsv4/results/concurrency/bench-20260903-013000-c80.json
+/data/models/dsv4/results/concurrency/bench-20260903-013000-c5.json
+/data/models/dsv4/results/concurrency/bench-20260903-013000-c10.json
+/data/models/dsv4/results/concurrency/bench-20260903-013000-c80.json
 ```
 
 每个 JSON 都包含该档位的配置、汇总指标以及每条请求的成功状态、E2E、TTFT、TPOT 和 token 数。查看文件：
 
 ```bash
-ls -lht /home/mem/dsv4/results/concurrency/
+ls -lht /data/models/dsv4/results/concurrency/
 ```
 
 查看最新一次并发 80 的完整结果：
 
 ```bash
-LATEST=$(ls -t /home/mem/dsv4/results/concurrency/bench-*-c80.json | head -n 1)
+LATEST=$(ls -t /data/models/dsv4/results/concurrency/bench-*-c80.json | head -n 1)
 python3 -m json.tool "$LATEST" | less
 ```
 
@@ -434,7 +434,7 @@ bash tools/gpqa_accuracy_repeat.sh
 
 ## 12. 停止
 
-按本文首次复现方式运行时，在模型服务终端按 `Ctrl+C`，然后输入 `exit`。启动脚本使用 `docker run --rm`，退出容器后容器会自动删除；`/home/mem/dsv4` 下的代码、权重、GGUF、日志和结果不会删除。
+按本文首次复现方式运行时，在模型服务终端按 `Ctrl+C`，然后输入 `exit`。启动脚本使用 `docker run --rm`，退出容器后容器会自动删除；`/data/models/dsv4` 下的代码、权重、GGUF、日志和结果不会删除。
 
 如果后续改成后台容器，应在宿主机执行 `docker stop --time 60 <容器名>`，不需要查找或手工杀模型 PID。
 

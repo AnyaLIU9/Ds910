@@ -29,7 +29,7 @@ shasum -a 256 deepseek-v4-npu-910b-arm64.tar
 把这个 tar 上传到：
 
 ```text
-/home/mem/dsv4/packages/deepseek-v4-npu-910b-arm64.tar
+/data/models/dsv4/packages/deepseek-v4-npu-910b-arm64.tar
 ```
 
 服务器实验流程会先校验它，再执行 `docker load`。导入后镜像进入 Docker 自己的存储；tar 可以继续留在 `packages/` 作为离线备份。
@@ -79,13 +79,13 @@ KTransformers ZIP 不带子模块内容，所以它里面的 `third_party/` 出�
 
 ```text
 Mac 解压得到：dsv4-hwloc-arm64-debs/*.deb
-服务器放到：/home/mem/dsv4/image/debs/*.deb
+服务器放到：/data/models/dsv4/image/debs/*.deb
 ```
 
-如果选择把压缩包传到服务器再解压，先临时放到 `/home/mem/dsv4/image/`，然后在服务器执行：
+如果选择把压缩包传到服务器再解压，先临时放到 `/data/models/dsv4/image/`，然后在服务器执行：
 
 ```bash
-cd /home/mem/dsv4/image
+cd /data/models/dsv4/image
 sha256sum -c dsv4-hwloc-arm64-debs.tar.gz.sha256
 mkdir -p debs
 tar -xzf dsv4-hwloc-arm64-debs.tar.gz \
@@ -96,7 +96,7 @@ find debs -maxdepth 1 -type f -name '._*' -delete
 find debs -maxdepth 1 -type f -name '*.deb' ! -name '._*' | wc -l
 ```
 
-最后必须显示 `17`。确认后删掉临时的 `dsv4-hwloc-arm64-debs.tar.gz` 和校验文件，最终只留下 `/home/mem/dsv4/image/debs/*.deb`；这样 `packages/` 仍然只有 Docker 镜像 tar。
+最后必须显示 `17`。确认后删掉临时的 `dsv4-hwloc-arm64-debs.tar.gz` 和校验文件，最终只留下 `/data/models/dsv4/image/debs/*.deb`；这样 `packages/` 仍然只有 Docker 镜像 tar。
 
 如果你看到 `libltdl...deb` 和 `._libltdl...deb` 两个名字，只保留前者。所有以 `._` 开头的文件都可以删除，它们只是 macOS AppleDouble 元数据。
 
@@ -105,7 +105,7 @@ find debs -maxdepth 1 -type f -name '*.deb' ! -name '._*' | wc -l
 ```text
 Mac 暂存目录
   → 上传 17 个 deb
-测试服务器 /home/mem/dsv4/image/debs/
+测试服务器 /data/models/dsv4/image/debs/
   → docker build
 派生 Docker 镜像里的 Ubuntu 环境
 ```

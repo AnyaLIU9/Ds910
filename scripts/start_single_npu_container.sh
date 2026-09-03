@@ -4,7 +4,7 @@ set -euo pipefail
 # 唯一需要经常修改的参数：宿主机上的物理 NPU 编号。
 NPU_ID="${NPU_ID:-5}"
 
-DSV4_ROOT="${DSV4_ROOT:-/home/mem/dsv4}"
+DSV4_ROOT="${DSV4_ROOT:-/data/models/dsv4}"
 IMAGE="${IMAGE:-dsv4-offload-env:cann85-910b2}"
 SERVICE_PORT="${SERVICE_PORT:-8020}"
 SHM_SIZE="${SHM_SIZE:-64g}"

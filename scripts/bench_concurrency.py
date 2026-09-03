@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 
-ALLOWED_CONCURRENCY = (5, 10, 80)
+DEFAULT_CONCURRENCY = (5, 10, 20, 30)
 
 
 @dataclass
@@ -38,7 +38,7 @@ class RequestResult:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "压测 OpenAI 兼容的 /v1/chat/completions；并发只允许 5、10、80。"
+            "压测 OpenAI 兼容的 /v1/chat/completions，统计输入/输出 token 吞吐。"
         )
     )
     parser.add_argument(
@@ -60,9 +60,8 @@ def parse_args() -> argparse.Namespace:
         "--concurrency",
         nargs="+",
         type=int,
-        choices=ALLOWED_CONCURRENCY,
-        default=list(ALLOWED_CONCURRENCY),
-        help="依次测试的并发档位，默认：5 10 80。",
+        default=list(DEFAULT_CONCURRENCY),
+        help="依次测试的并发档位，默认：5 10 20 30。",
     )
     parser.add_argument(
         "--requests",
@@ -80,7 +79,7 @@ def parse_args() -> argparse.Namespace:
         "--timeout",
         type=float,
         default=1800,
-        help="单请求超时秒数；并发 80 在单发服务上会长时间排队。",
+        help="单请求超时秒数；高并发在单卡服务上可能长时间排队。",
     )
     parser.add_argument(
         "--prompt",
@@ -114,6 +113,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--requests 不能小于 0")
     if args.max_tokens <= 0:
         parser.error("--max-tokens 必须大于 0")
+    if any(value <= 0 for value in args.concurrency):
+        parser.error("--concurrency 中的值必须全部大于 0")
     return args
 
 
@@ -275,6 +276,11 @@ def summarize(
             if completion_tokens is not None and wall_s
             else None
         ),
+        "input_token_throughput_tps": (
+            prompt_tokens / wall_s
+            if prompt_tokens is not None and wall_s
+            else None
+        ),
         "total_token_throughput_tps": (
             total_tokens / wall_s if total_tokens is not None and wall_s else None
         ),
@@ -304,6 +310,8 @@ def print_summary(summary: dict[str, Any]) -> None:
     print(
         "请求吞吐="
         f"{format_number(summary['request_throughput_rps'])} req/s  "
+        "输入吞吐="
+        f"{format_number(summary['input_token_throughput_tps'])} tok/s  "
         "输出吞吐="
         f"{format_number(summary['output_token_throughput_tps'])} tok/s  "
         "总吞吐="
@@ -440,11 +448,12 @@ def main() -> int:
         print(f"结果文件：{result_path}")
 
     print("\n汇总：")
-    print("并发\t成功/总数\t输出 tok/s\t总 tok/s\tTTFT p99(ms)\tE2E p99(ms)")
+    print("并发\t成功/总数\t输入 tok/s\t输出 tok/s\t总 tok/s\tTTFT p99(ms)\tE2E p99(ms)")
     for summary in all_summaries:
         print(
             f"{summary['concurrency']}\t"
             f"{summary['successful']}/{summary['requests']}\t"
+            f"{format_number(summary['input_token_throughput_tps'])}\t"
             f"{format_number(summary['output_token_throughput_tps'])}\t"
             f"{format_number(summary['total_token_throughput_tps'])}\t"
             f"{format_number(summary['ttft_ms']['p99'])}\t"

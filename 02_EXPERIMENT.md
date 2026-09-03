@@ -1,4 +1,4 @@
-# DeepSeek-V4-Flash 单卡实验：服务器操作
+# DeepSeek-V4-Flash 单卡实验：从零部署
 
 本文从这个状态开始：**代码、权重和 deb 已经解压并上传；Docker 镜像 tar 已放进 `packages/`，但还没有执行 `docker load`**。除这个镜像 tar 外，实验目录不保存其他 ZIP、tar 或 tar.gz。
 
@@ -91,6 +91,27 @@ NPU_ID=5
 ls -l "/dev/davinci${NPU_ID}" \
   /dev/davinci_manager /dev/devmm_svm /dev/hisi_hdc
 ```
+
+### 物理卡号和容器逻辑卡号不是一回事
+
+`NPU_ID` 始终填写宿主机物理卡号，也就是 `/dev/davinciN` 中的 `N`。但 CANN 的
+`ASCEND_RT_VISIBLE_DEVICES` 使用容器逻辑编号。如果宿主机设备编号不连续，两者就不相等。
+CANN 8.5 官方也明确区分用户设备 ID、逻辑设备 ID 和物理设备 ID：
+https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850/API/appdevgapi/aclcppdevg_03_2059.html
+
+例如这台服务器没有 `/dev/davinci4`：
+
+```text
+宿主机设备节点：/dev/davinci0 1 2 3 5 6 ...
+容器逻辑编号：               0 1 2 3 4 5 ...
+
+物理 NPU 5 → 容器逻辑 4
+物理 NPU 6 → 容器逻辑 5
+```
+
+如果错误地设置 `ASCEND_RT_VISIBLE_DEVICES=5`，权重就会加载到物理 NPU 6。当前仓库的
+`start_single_npu_container.sh` 会按现有 `/dev/davinci*` 顺序自动计算逻辑编号，并在进入容器前明确打印映射。
+不要因为物理卡 5 对应逻辑 4，就把宿主机的 `NPU_ID` 改成 4；宿主机仍然必须使用 `NPU_ID=5`。
 
 ## 2. 导入 Docker 基础镜像
 
@@ -216,7 +237,15 @@ export NPU_ID=5
 bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
 ```
 
-脚本会自动完成 `宿主机 9108 → 容器 9108` 的端口映射，并把 `PORT=9108` 写入 `/data/models/dsv4/code/dsv4_runtime.env`。启动成功后当前终端会进入容器；如需确认映射，应另开一个宿主机终端执行：
+在这台缺少物理卡 4 的服务器上，脚本应当明确显示：
+
+```text
+物理 NPU：5（/dev/davinci5）
+容器逻辑 NPU：4（进程内会成为 npu:0）
+```
+
+脚本会自动完成 `宿主机 9108 → 容器 9108` 的端口映射，并把物理卡号、容器逻辑卡号和
+`PORT=9108` 写入 `/data/models/dsv4/code/dsv4_runtime.env`。启动成功后当前终端会进入容器；如需确认端口映射，应另开一个宿主机终端执行：
 
 ```bash
 docker port "dsv4-npu${NPU_ID}"
@@ -231,13 +260,21 @@ bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
 
 命令成功后会直接进入容器。脚本同时生成 `/workspace/code/dsv4_runtime.env`，后续不需要再次手写卡号。
 
+如果自动推导结果与 `npu-smi info -m` 显示的实际映射不同，可以在宿主机显式覆盖容器逻辑编号：
+
+```bash
+export NPU_ID=5
+export ASCEND_LOGICAL_ID=4
+bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
+```
+
 以后如果还要换端口，只需在启动容器前设置一次 `SERVICE_PORT=<新端口>`，后续从宿主机访问 API 时使用相同端口。容器内先 `source /workspace/code/dsv4_runtime.env`，后续启动服务、单请求测试和 GPQA 都会读取其中的端口，不需要编辑 `launch_ds4flash_npu.sh`。
 
 ## 6. 容器内检查
 
 ```bash
 source /workspace/code/dsv4_runtime.env
-echo "physical NPU=$NPU_DEVICE_ID, visible=$ASCEND_RT_VISIBLE_DEVICES, port=$PORT"
+echo "physical=$NPU_PHYSICAL_ID, container logical=$ASCEND_LOGICAL_ID, visible=$ASCEND_RT_VISIBLE_DEVICES, port=$PORT"
 npu-smi info
 ```
 
@@ -254,7 +291,24 @@ print("visible device count", torch.npu.device_count())
 PY
 ```
 
-`available` 必须为 `True`。`NPU_DEVICE_ID` 是宿主机物理卡号；`ASCEND_RT_VISIBLE_DEVICES` 会让进程内部把这张卡当作逻辑卡 0。
+`available` 必须为 `True`。在这台服务器选择物理 NPU 5 时，上一条 `echo` 应显示
+`physical=5, container logical=4, visible=4`。SGLang 进程最终只看到 `npu:0`。
+
+第一次发现宿主机编号存在缺口时，建议在加载大模型前做一次小分配确认。容器内执行：
+
+```bash
+python3 - <<'PY'
+import time
+import torch
+import torch_npu
+
+x = torch.empty(128 * 1024 * 1024, dtype=torch.uint8, device="npu:0")
+print("已在进程内 npu:0 分配 128 MiB；请在宿主机观察 15 秒")
+time.sleep(15)
+PY
+```
+
+在这 15 秒内，另一个宿主机终端执行 `npu-smi info`，应看到临时进程出现在物理 NPU 5，不能出现在 NPU 6。
 
 ## 7. 应用补丁（只执行一次）
 
@@ -347,6 +401,7 @@ GGUF_DIR="$GGUF_CACHE" GGUF_SUFFIX=_mxfp4 bash tools/e2e_preflight.sh
 
 ```bash
 NPU_DEVICE_ID="$NPU_DEVICE_ID" \
+ASCEND_RT_VISIBLE_DEVICES="$ASCEND_RT_VISIBLE_DEVICES" \
 PORT="$PORT" \
 PYTHON_BIN="$PYTHON_BIN" \
 MODEL_PATH="$W8A8_DIR" \
@@ -389,6 +444,14 @@ curl -sS -X POST "http://127.0.0.1:${SERVICE_PORT}/generate" \
 ```
 
 能连贯回答“北京”，且服务不退出，才做性能测试。
+
+`/health` 成功时可能没有响应正文。日志出现 `GET /health ... 200 OK` 就表示成功，也可以直接显示状态码：
+
+```bash
+curl -sS --max-time 5 -o /dev/null \
+  -w 'health HTTP %{http_code}\n' \
+  "http://127.0.0.1:${SERVICE_PORT}/health"
+```
 
 ### 11.2 单请求 decode 吞吐
 
@@ -473,4 +536,5 @@ bash tools/gpqa_accuracy_repeat.sh
 
 如果后续改成后台容器，应在宿主机执行 `docker stop --time 60 <容器名>`，不需要查找或手工杀模型 PID。
 
-下次继续实验时不需要重新 `docker load`、构建镜像、打补丁、编译或转换 GGUF，只需重新执行第 5、6、10 步。
+下次继续实验时不需要重新 `docker load`、构建镜像、打补丁、编译或转换 GGUF，直接看
+`03_REDEPLOY_EXISTING_IMAGE.md`。

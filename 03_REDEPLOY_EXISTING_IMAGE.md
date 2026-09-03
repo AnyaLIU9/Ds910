@@ -1,15 +1,15 @@
-# 容器已删除后，用较低显存配置重新启动
+# 已有镜像和转换产物：重新部署
 
-这份说明只适用于下面这种情况：
+这份说明适用于下面这种情况：
 
 - `/data/models/dsv4` 还在；
+- 派生镜像 `dsv4-offload-env:cann85-910b2` 已经构建好；
 - W8A8 模型和原始 MXFP4 模型还在；
 - 43 个 MXFP4 GGUF 已经转换完成；
 - KTransformers、SGLang 补丁和 kt-kernel 编译已经做过；
-- 上一次启动在 `Load weight end` 之后、创建 KV Cache 时因显存不足失败；
-- 上一次的容器已经删除。
+- 上一次容器已经停止或删除，无论上一次成功还是失败。
 
-本次不重新打补丁、不重新编译、不重新转换权重。目标是使用物理 NPU 5、端口 9108，把每层常驻 NPU 的专家数从 32 降到 24，先验证服务能否启动。
+本次不重新导入或构建镜像、不重新打补丁、不重新编译、不重新转换权重。目标是使用物理 NPU 5、端口 9108 重新创建容器。首次重启先用每层 24 个 NPU 常驻专家验证；确认物理卡映射和生成结果后，再恢复 32 个专家测正式性能。
 
 ## 1. 先理解哪些东西还在
 
@@ -37,6 +37,7 @@ Docker 镜像和 Docker 容器也不是一回事。删除容器通常不会删�
 ```bash
 export DSV4_ROOT=/data/models/dsv4
 export NPU_ID=5
+export ASCEND_LOGICAL_ID=4
 export SERVICE_PORT=9108
 
 npu-smi info
@@ -52,6 +53,17 @@ docker image inspect dsv4-offload-env:cann85-910b2 >/dev/null \
 - 9108 端口应当没有输出；
 - 不应存在名为 `dsv4-npu5` 的旧容器；
 - 最后一条应输出 `派生镜像存在`。
+
+这里的两个卡号不能混用：
+
+```text
+NPU_ID=5                 宿主机物理卡，对应 /dev/davinci5
+ASCEND_LOGICAL_ID=4      容器逻辑卡；这台服务器缺少物理卡4
+```
+
+如果把 `ASCEND_RT_VISIBLE_DEVICES` 错设成 5，实际会落到物理 NPU 6。NPU 6 只有约 50 GB HBM 时，32 个常驻专家会在 KV Cache 创建阶段失败。仓库启动脚本会自动计算逻辑编号；这里显式写出 4 是为了再次部署时更容易核对。
+CANN 8.5 对三种设备编号的官方说明：
+https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850/API/appdevgapi/aclcppdevg_03_2059.html
 
 如果 NPU 5 在模型启动前就占用了几 GB，先通过 `npu-smi info` 下方的进程表确认占用者。不要直接结束不认识的业务进程。
 
@@ -85,11 +97,19 @@ GGUF 文件数量必须是 `43`。如果输出不是 43，先不要启动模型�
 
 ```bash
 export NPU_ID=5
+export ASCEND_LOGICAL_ID=4
 export SERVICE_PORT=9108
 bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
 ```
 
-成功后当前终端会进入新容器。终端提示符发生变化属于正常现象。
+启动前脚本必须输出：
+
+```text
+物理 NPU：5（/dev/davinci5）
+容器逻辑 NPU：4（进程内会成为 npu:0）
+```
+
+成功后当前终端会进入新容器。终端提示符发生变化属于正常现象。如果脚本显示物理 5 对应逻辑 5，先停止，不要加载权重。
 
 ## 5. 在新容器里检查旧编译产物
 
@@ -104,7 +124,7 @@ export W8A8_DIR=/workspace/models/DeepSeek-V4-Flash-W8A8
 export GGUF_CACHE=/workspace/models/cache
 export PYTHONPATH="$REPO/third_party/sglang/python:$REPO/kt-kernel${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "physical NPU=$NPU_DEVICE_ID, port=$PORT"
+echo "physical=$NPU_PHYSICAL_ID, container logical=$ASCEND_LOGICAL_ID, visible=$ASCEND_RT_VISIBLE_DEVICES, port=$PORT"
 test -f "$REPO/.dsv4_patch_applied" && echo '补丁标记正常'
 "$PYTHON_BIN" -c 'import kt_kernel; print("kt_kernel OK")'
 find "$GGUF_CACHE" -maxdepth 1 -name 'dsv4_layer*_mxfp4.gguf' | wc -l
@@ -113,7 +133,7 @@ find "$GGUF_CACHE" -maxdepth 1 -name 'dsv4_layer*_mxfp4.gguf' | wc -l
 应当看到：
 
 ```text
-physical NPU=5, port=9108
+physical=5, container logical=4, visible=4, port=9108
 补丁标记正常
 kt_kernel OK
 43
@@ -159,6 +179,7 @@ fi
 cd "$REPO"
 
 NPU_DEVICE_ID="$NPU_DEVICE_ID" \
+ASCEND_RT_VISIBLE_DEVICES="$ASCEND_RT_VISIBLE_DEVICES" \
 PORT="$PORT" \
 PYTHON_BIN="$PYTHON_BIN" \
 MODEL_PATH="$W8A8_DIR" \
@@ -198,6 +219,8 @@ tail -f /data/models/dsv4/code/logs/serve-single-npu.log
 watch -n 2 npu-smi info
 ```
 
+权重加载期间必须看到物理 NPU 5 的显存上升。如果显存出现在 NPU 6，立即按 `Ctrl+C` 停止；这表示容器逻辑编号仍然设置错了。
+
 重点观察日志是否依次出现类似信息：
 
 ```text
@@ -214,10 +237,12 @@ Capture npu graph end ...
 在第二个宿主机终端执行：
 
 ```bash
-curl -sS http://127.0.0.1:9108/health
+curl -sS --max-time 5 -o /dev/null \
+  -w 'health HTTP %{http_code}\n' \
+  http://127.0.0.1:9108/health
 ```
 
-如果服务还在加载，可以等待几分钟后重试。健康检查成功后发送短请求：
+如果服务还在加载，可以等待几分钟后重试。输出 `health HTTP 200` 即成功；健康接口没有正文属于正常现象。然后发送短请求：
 
 ```bash
 curl -sS -X POST http://127.0.0.1:9108/generate \
@@ -227,7 +252,17 @@ curl -sS -X POST http://127.0.0.1:9108/generate \
 
 能返回连贯内容，并且模型进程不退出，才算本轮启动成功。
 
-## 11. 如果 24 个专家仍然报同一个 AssertionError
+## 11. 在物理 NPU 5 上恢复 32 个专家
+
+24 个专家能回答后，说明重新部署和卡号映射正确。若要按原教程测试性能，先正常停止并删除当前容器，再按第 4 节重新创建容器，然后把第 8 节启动命令改为：
+
+```text
+KT_NUM_GPU_EXPERTS=32
+```
+
+其他参数先保持不变。物理 NPU 5 有完整 64 GB HBM，32 个专家大概率可以创建 KV Cache；仍需以日志中的 `SWAC4C128KVPool mem usage` 和实际生成请求为准。需要测试 32k prompt 时，再将 `CHUNKED_PREFILL_SIZE` 从 8192 调到 32768。
+
+## 12. 如果 24 个专家仍然报同一个 AssertionError
 
 先确认失败日志仍然是：
 
@@ -250,7 +285,7 @@ grep -nE \
 
 不要通过反复提高 `MEM_FRACTION` 作为长期解决办法。提高它虽然可能给 KV 池更多空间，却会压缩长 prefill 所需的激活余量，后面可能在请求阶段 OOM。
 
-## 12. 如何停止并删除这次容器
+## 13. 如何停止并删除这次容器
 
 如果模型在前台运行，在模型终端按一次 `Ctrl+C`，等待子进程退出，然后执行：
 

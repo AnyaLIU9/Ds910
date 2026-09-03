@@ -1,6 +1,9 @@
 # DeepSeek-V4-Flash 单卡实验：下载清单
 
-这份文件只回答一件事：**联网电脑需要下载什么**。服务器上的操作看 `02_EXPERIMENT.md`。
+这份文件只回答一件事：**联网电脑需要下载什么**。
+
+- 第一次从零部署：看 `02_EXPERIMENT.md`；
+- 镜像、代码和转换产物已经存在，只需重新创建容器：看 `03_REDEPLOY_EXISTING_IMAGE.md`。
 
 固定路线：Atlas 910B2 + Kunpeng-920 + CANN 8.5 镜像 + SGLang/KTransformers CPU MoE offload。
 

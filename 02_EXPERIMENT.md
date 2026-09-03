@@ -197,31 +197,41 @@ ss -ltnp | grep ':8020' || true
 docker ps --format 'table {{.Names}}\t{{.Ports}}' | grep '8020' || true
 ```
 
-不需要停止别人的服务，直接换成 9018。宿主机使用物理卡 5、端口 9018：
+这个失败不影响前四步，也不会影响原来占用 8020 的服务。当前启动脚本使用 `--rm`，失败的容器通常会自动删除。先检查是否有同名残留：
+
+```bash
+docker ps -a --filter 'name=^/dsv4-npu5$'
+```
+
+如果没有输出就直接继续；如果看到状态为 `Created` 或 `Exited` 的 `dsv4-npu5`，删除这个失败容器：
+
+```bash
+docker rm dsv4-npu5
+```
+
+启动脚本现在默认使用 9108，不需要再设置端口。宿主机使用物理卡 5：
 
 ```bash
 export NPU_ID=5
-export SERVICE_PORT=9018
 bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
 ```
 
-脚本会同时完成 `宿主机 9018 → 容器 9018` 的端口映射，并把 `PORT=9018` 写入 `/data/models/dsv4/code/dsv4_runtime.env`。启动成功后当前终端会进入容器；如需确认映射，应另开一个宿主机终端执行：
+脚本会自动完成 `宿主机 9108 → 容器 9108` 的端口映射，并把 `PORT=9108` 写入 `/data/models/dsv4/code/dsv4_runtime.env`。启动成功后当前终端会进入容器；如需确认映射，应另开一个宿主机终端执行：
 
 ```bash
 docker port "dsv4-npu${NPU_ID}"
 ```
 
-改用物理卡 3、仍使用端口 9018：
+改用物理卡 3、仍使用默认端口 9108：
 
 ```bash
 export NPU_ID=3
-export SERVICE_PORT=9018
 bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
 ```
 
 命令成功后会直接进入容器。脚本同时生成 `/workspace/code/dsv4_runtime.env`，后续不需要再次手写卡号。
 
-换端口只涉及两类位置：启动容器前设置一次 `SERVICE_PORT=9018`；后续从宿主机访问 API 时使用 9018。容器内先 `source /workspace/code/dsv4_runtime.env`，后续启动服务、单请求测试和 GPQA 都读取其中的 `PORT=9018`，不需要编辑 `launch_ds4flash_npu.sh`。
+以后如果还要换端口，只需在启动容器前设置一次 `SERVICE_PORT=<新端口>`，后续从宿主机访问 API 时使用相同端口。容器内先 `source /workspace/code/dsv4_runtime.env`，后续启动服务、单请求测试和 GPQA 都会读取其中的端口，不需要编辑 `launch_ds4flash_npu.sh`。
 
 ## 6. 容器内检查
 
@@ -370,7 +380,7 @@ bash tools/launch_ds4flash_npu.sh \
 新宿主机终端执行：
 
 ```bash
-export SERVICE_PORT=9018
+export SERVICE_PORT=9108
 until curl -sf "http://127.0.0.1:${SERVICE_PORT}/health" >/dev/null; do sleep 5; done
 
 curl -sS -X POST "http://127.0.0.1:${SERVICE_PORT}/generate" \
@@ -404,7 +414,7 @@ TARGET_TOKENS_LIST="130 1000 8000" MAX_NEW=1000 REPEAT=3 WARMUP=1 \
 宿主机执行：
 
 ```bash
-export SERVICE_PORT=9018
+export SERVICE_PORT=9108
 curl -s "http://127.0.0.1:${SERVICE_PORT}/v1/models"
 ```
 

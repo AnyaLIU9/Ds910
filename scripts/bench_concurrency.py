@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--base-url",
-        default=os.getenv("API_BASE_URL", "http://127.0.0.1:8020"),
+        default=os.getenv("API_BASE_URL", "http://127.0.0.1:9108"),
         help="服务根地址，默认读取 API_BASE_URL。",
     )
     parser.add_argument(

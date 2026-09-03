@@ -6,7 +6,7 @@ NPU_ID="${NPU_ID:-5}"
 
 DSV4_ROOT="${DSV4_ROOT:-/data/models/dsv4}"
 IMAGE="${IMAGE:-dsv4-offload-env:cann85-910b2}"
-SERVICE_PORT="${SERVICE_PORT:-8020}"
+SERVICE_PORT="${SERVICE_PORT:-9108}"
 SHM_SIZE="${SHM_SIZE:-64g}"
 CONTAINER_NAME="${CONTAINER_NAME:-dsv4-npu${NPU_ID}}"
 RELEASE_DIR="${DSV4_ROOT}/code/cann-recipes-infer/integration/sglang/dsv4-flash-single-npu-moe-offload"

@@ -141,6 +141,22 @@ kt_kernel OK
 
 如果 `import kt_kernel` 失败，说明编译产物没有保留下来或当前镜像环境与上次不同。这时只重新执行 `02_EXPERIMENT.md` 的“编译 kt-kernel”一节，不要重新转换 GGUF。
 
+加载大模型前，先用一小块显存确认物理卡映射。容器内执行：
+
+```bash
+"$PYTHON_BIN" - <<'PY'
+import time
+import torch
+import torch_npu
+
+x = torch.empty(128 * 1024 * 1024, dtype=torch.uint8, device="npu:0")
+print("已在进程内 npu:0 分配 128 MiB；请在宿主机观察 15 秒")
+time.sleep(15)
+PY
+```
+
+这 15 秒内在另一个宿主机终端执行 `npu-smi info`。临时进程必须出现在物理 NPU 5；如果出现在 NPU 6，不要继续加载权重。
+
 ## 6. 运行启动前预检
 
 容器内执行：
@@ -285,7 +301,105 @@ grep -nE \
 
 不要通过反复提高 `MEM_FRACTION` 作为长期解决办法。提高它虽然可能给 KV 池更多空间，却会压缩长 prefill 所需的激活余量，后面可能在请求阶段 OOM。
 
-## 13. 如何停止并删除这次容器
+## 13. 本次实测踩坑复盘（最终已跑通）
+
+### 13.1 表面上是显存不足，真正起因是设备编号映射错了
+
+本次计划使用宿主机物理 NPU 5，但服务器的设备节点中没有编号 4：
+
+```text
+宿主机物理设备：0 1 2 3 5 6 ...
+容器逻辑设备：  0 1 2 3 4 5 ...
+```
+
+旧启动脚本直接执行了：
+
+```text
+NPU_ID=5
+ASCEND_RT_VISIBLE_DEVICES=5
+```
+
+其中第一个 `5` 是宿主机物理编号，第二个 `5` 却是容器逻辑编号。容器逻辑 5 实际对应宿主机物理 NPU 6，因此模型没有加载到计划中的物理 NPU 5。
+
+物理 NPU 6 当时只有约 50 GB 可用 HBM。使用 32 个 NPU 常驻专家时，权重虽然已经完成加载，但剩余空间不足以创建 KV Cache，最终触发：
+
+```text
+assert c128_max_total_num_tokens > 0
+```
+
+正确关系是：
+
+```text
+宿主机 NPU_ID=5
+容器 ASCEND_LOGICAL_ID=4
+进程内部使用 npu:0
+```
+
+修正映射并确认显存出现在物理 NPU 5 后，服务完成启动和请求验证，本次单卡 CPU/NPU offload 部署最终跑通。
+
+### 13.2 为什么一开始容易误判成 offload 或量化问题
+
+本次日志顺序大致是：
+
+```text
+Load weight end ...
+Using KV cache dtype bfloat16
+创建 SWAC4C128 KV 内存池
+AssertionError
+unclosed zmq.Socket ...
+```
+
+这些信息应这样理解：
+
+| 现象 | 正确含义 |
+|---|---|
+| `Load weight end` | 权重加载阶段已经完成，不代表整个服务已经就绪 |
+| `Using KV cache dtype bfloat16` | 正常默认配置，不是量化精度错误 |
+| `c128_max_total_num_tokens > 0` 断言失败 | 当前实际 NPU 的剩余 HBM 不够创建最低 KV 池 |
+| `unclosed zmq.Socket` | Scheduler 异常退出后的清理提示，不是根因 |
+| `Only CUDA/HIP/XPU support AWQ currently` | 当前路线使用 compressed-tensors W8A8，与本次失败无关 |
+| 物理 NPU 5 没有进程、NPU 6 显存上涨 | 设备映射错误，应立即停止加载 |
+
+完整 W8A8 权重约 275 GiB，不可能全部常驻一张 64 GB NPU。日志已经走到 KV 内存池阶段时，“完全没有执行 CPU MoE offload”不是首要怀疑方向；应先确认实际占用的是哪张物理卡，以及这张卡真实可用的 HBM。
+
+### 13.3 `/health` 看起来没输出，其实已经成功
+
+修正显存配置后，日志持续出现：
+
+```text
+INFO ... GET /health HTTP/1.1 200 OK
+```
+
+同时 Uvicorn 显示：
+
+```text
+Uvicorn running on http://0.0.0.0:9108
+```
+
+这已经说明 HTTP 服务可访问。`/health` 可以返回空响应体，所以普通 `curl -s` 会表现为终端没有文字。以后统一使用：
+
+```bash
+curl -sS --max-time 5 -o /dev/null \
+  -w 'health HTTP %{http_code}\n' \
+  http://127.0.0.1:9108/health
+```
+
+输出 `health HTTP 200` 表示健康检查通过。最终仍要再发送一次 `/generate` 请求并确认回答连贯，才算端到端部署成功。
+
+### 13.4 以后重跑的最短检查顺序
+
+1. 宿主机用 `ls /dev/davinci*` 检查物理编号是否连续；
+2. 使用 `NPU_ID=5 ASCEND_LOGICAL_ID=4` 创建容器；
+3. 确认脚本打印“物理 5、容器逻辑 4”；
+4. 先做第 5 节的 128 MiB 小分配，在宿主机确认进程落到物理 NPU 5；
+5. 再加载大模型，同时用 `npu-smi info` 观察目标卡；
+6. 日志到达 `SWAC4C128KVPool` 后检查是否成功创建 KV 池；
+7. 用带状态码的 `/health` 命令验证 HTTP；
+8. 用 `/generate` 验证真实推理输出。
+
+这次最大的经验是：**看到显存错误时，先确认“实际物理卡”，再调整专家数、KV Cache 或量化参数。**
+
+## 14. 如何停止并删除这次容器
 
 如果模型在前台运行，在模型终端按一次 `Ctrl+C`，等待子进程退出，然后执行：
 

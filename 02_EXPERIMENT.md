@@ -184,21 +184,44 @@ docker run --rm --entrypoint /bin/bash \
 
 ## 5. 选择一张卡并进入容器
 
-宿主机执行。使用物理卡 5：
+如果出现下面的错误：
+
+```text
+bind for 0.0.0.0:8020 failed: port is already allocated
+```
+
+说明宿主机端口 8020 已被其他进程或容器占用，与 NPU 和模型权重无关。可以先查看占用者：
+
+```bash
+ss -ltnp | grep ':8020' || true
+docker ps --format 'table {{.Names}}\t{{.Ports}}' | grep '8020' || true
+```
+
+不需要停止别人的服务，直接换成 9018。宿主机使用物理卡 5、端口 9018：
 
 ```bash
 export NPU_ID=5
+export SERVICE_PORT=9018
 bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
 ```
 
-改用物理卡 3 时只改为：
+脚本会同时完成 `宿主机 9018 → 容器 9018` 的端口映射，并把 `PORT=9018` 写入 `/data/models/dsv4/code/dsv4_runtime.env`。启动成功后当前终端会进入容器；如需确认映射，应另开一个宿主机终端执行：
+
+```bash
+docker port "dsv4-npu${NPU_ID}"
+```
+
+改用物理卡 3、仍使用端口 9018：
 
 ```bash
 export NPU_ID=3
+export SERVICE_PORT=9018
 bash /data/models/dsv4/code/scripts/start_single_npu_container.sh
 ```
 
 命令成功后会直接进入容器。脚本同时生成 `/workspace/code/dsv4_runtime.env`，后续不需要再次手写卡号。
+
+换端口只涉及两类位置：启动容器前设置一次 `SERVICE_PORT=9018`；后续从宿主机访问 API 时使用 9018。容器内先 `source /workspace/code/dsv4_runtime.env`，后续启动服务、单请求测试和 GPQA 都读取其中的 `PORT=9018`，不需要编辑 `launch_ds4flash_npu.sh`。
 
 ## 6. 容器内检查
 
@@ -347,9 +370,10 @@ bash tools/launch_ds4flash_npu.sh \
 新宿主机终端执行：
 
 ```bash
-until curl -sf http://127.0.0.1:8020/health >/dev/null; do sleep 5; done
+export SERVICE_PORT=9018
+until curl -sf "http://127.0.0.1:${SERVICE_PORT}/health" >/dev/null; do sleep 5; done
 
-curl -sS -X POST http://127.0.0.1:8020/generate \
+curl -sS -X POST "http://127.0.0.1:${SERVICE_PORT}/generate" \
   -H 'Content-Type: application/json' \
   -d '{"text":"中国的首都是哪里？","sampling_params":{"max_new_tokens":64,"temperature":0}}'
 ```
@@ -380,14 +404,15 @@ TARGET_TOKENS_LIST="130 1000 8000" MAX_NEW=1000 REPEAT=3 WARMUP=1 \
 宿主机执行：
 
 ```bash
-curl -s http://127.0.0.1:8020/v1/models
+export SERVICE_PORT=9018
+curl -s "http://127.0.0.1:${SERVICE_PORT}/v1/models"
 ```
 
 记下返回结果中的模型 `id`，下面用 `<MODEL_ID>` 替换：
 
 ```bash
 python3 /data/models/dsv4/code/scripts/bench_concurrency.py \
-  --base-url http://127.0.0.1:8020 \
+  --base-url "http://127.0.0.1:${SERVICE_PORT}" \
   --model '<MODEL_ID>' \
   --concurrency 5 10 80 \
   --max-tokens 128 \

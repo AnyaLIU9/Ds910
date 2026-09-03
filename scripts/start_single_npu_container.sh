@@ -18,6 +18,11 @@ if [[ ! "${NPU_ID}" =~ ^[0-9]+$ ]]; then
   exit 2
 fi
 
+if [[ ! "${SERVICE_PORT}" =~ ^[0-9]+$ ]] || (( SERVICE_PORT < 1 || SERVICE_PORT > 65535 )); then
+  echo "错误：SERVICE_PORT 必须是 1-65535，当前值为 ${SERVICE_PORT}" >&2
+  exit 2
+fi
+
 for path in \
   "/dev/davinci${NPU_ID}" \
   /dev/davinci_manager \

@@ -132,10 +132,11 @@ test -f "$REPO/third_party/pybind11/CMakeLists.txt"
 test -n "$(find "$REPO/third_party/custom_flashinfer" -mindepth 1 -maxdepth 1 -print -quit)"
 test -d "$REPO/third_party/sglang/python/sglang"
 test -f "$REPO/third_party/llama.cpp/convert-hf-to-gguf.py"
-find "$DSV4_ROOT/image/debs" -maxdepth 1 -name '*.deb' | wc -l
+find "$DSV4_ROOT/image/debs" -maxdepth 1 -type f -name '._*' -delete
+find "$DSV4_ROOT/image/debs" -maxdepth 1 -type f -name '*.deb' ! -name '._*' | wc -l
 ```
 
-最后一条应显示 `17`。任意 `test` 失败就先修目录，不要继续。
+最后一条应显示 `17`。`._xxx.deb` 是 macOS 元数据，不是真正的 deb，必须删除；任意 `test` 失败就先修目录，不要继续。
 
 检查两份权重有没有缺分片：
 

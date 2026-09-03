@@ -71,7 +71,7 @@ KTransformers ZIP 不带子模块内容，所以它里面的 `third_party/` 出�
 
 - [dsv4-hwloc-arm64-debs.tar.gz](./dsv4-hwloc-arm64-debs.tar.gz)
 - [SHA-256 校验文件](./dsv4-hwloc-arm64-debs.tar.gz.sha256)
-- SHA-256：`cb56838be69bd4b398b9a81a8f87f7b363247ad04d16c5d250772a2e1925b325`
+- SHA-256：`95c419bae9cbd3fc038f9ae6c87365523a3bd8ba2d6689c1171031f5a393cf9f`
 
 包内只有 17 个 deb。它们**不是安装到 Mac 本机，也不是安装到测试服务器宿主机**。
 
@@ -90,10 +90,15 @@ sha256sum -c dsv4-hwloc-arm64-debs.tar.gz.sha256
 mkdir -p debs
 tar -xzf dsv4-hwloc-arm64-debs.tar.gz \
   -C debs --strip-components=1
-find debs -maxdepth 1 -name '*.deb' | wc -l
+
+# macOS 产生的 ._* 是元数据，不是 deb；如果存在就删掉
+find debs -maxdepth 1 -type f -name '._*' -delete
+find debs -maxdepth 1 -type f -name '*.deb' ! -name '._*' | wc -l
 ```
 
 最后必须显示 `17`。确认后删掉临时的 `dsv4-hwloc-arm64-debs.tar.gz` 和校验文件，最终只留下 `/home/mem/dsv4/image/debs/*.deb`；这样 `packages/` 仍然只有 Docker 镜像 tar。
+
+如果你看到 `libltdl...deb` 和 `._libltdl...deb` 两个名字，只保留前者。所有以 `._` 开头的文件都可以删除，它们只是 macOS AppleDouble 元数据。
 
 后续执行 `docker build` 时，`image/Dockerfile` 才会把这些 deb 安装进 `dsv4-offload-env:cann85-910b2` 派生镜像。不要在 Mac 或服务器宿主机执行 `dpkg -i`，也不要单独下载一个 `libhwloc.so`。
 

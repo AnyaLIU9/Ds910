@@ -4,9 +4,18 @@ MODEL_PATH="${MODEL_PATH:-/data/models/Tensor-0.1-Flash-35B-A3B}"
 RESULT_ROOT="${MODEL_PATH}/results/qwen36-vllm-npu3"
 IMAGE="${IMAGE:-quay.io/ascend/vllm-ascend:v0.19.1rc1-openeuler}"
 CONTAINER_NAME=qwen36-flash-npu3
+QUANTIZATION="${QUANTIZATION:-}"
 
 die() { echo "错误：$*" >&2; exit 1; }
 [[ -f "${MODEL_PATH}/config.json" ]] || die "模型路径错误：${MODEL_PATH}"
+if grep -Eiq 'modelopt_fp4|nvfp4|"quant_method"[[:space:]]*:[[:space:]]*"modelopt' \
+  "${MODEL_PATH}/config.json" "${MODEL_PATH}/quantization_config.json" 2>/dev/null; then
+  die "检测到 NVIDIA ModelOpt/NVFP4 权重；vLLM-Ascend/910B2 不支持。请换同模型的 Ascend W8A8 权重"
+fi
+if [[ -z "${QUANTIZATION}" ]] && grep -Eiq 'w8a8|"quant_method"[[:space:]]*:[[:space:]]*"ascend' \
+  "${MODEL_PATH}/config.json" "${MODEL_PATH}/quantization_config.json" 2>/dev/null; then
+  QUANTIZATION=ascend
+fi
 [[ -e /dev/davinci3 ]] || die "缺少 /dev/davinci3"
 docker image inspect "${IMAGE}" >/dev/null 2>&1 || die "镜像不存在：${IMAGE}"
 docker container inspect "${CONTAINER_NAME}" >/dev/null 2>&1 && die "同名容器已存在"
@@ -31,7 +40,10 @@ docker run -d \
   -v "${RESULT_ROOT}":/results \
   -e ASCEND_RT_VISIBLE_DEVICES=3 \
   -e PYTORCH_NPU_ALLOC_CONF=expandable_segments:True \
-  "${IMAGE}" bash -lc 'exec vllm serve /model \
+  -e "QUANTIZATION=${QUANTIZATION}" \
+  "${IMAGE}" bash -lc 'quant_args=(); \
+    [[ -z "${QUANTIZATION}" ]] || quant_args=(--quantization "${QUANTIZATION}"); \
+    exec vllm serve /model \
     --served-model-name Tensor-0.1-Flash-35B-A3B \
     --host 0.0.0.0 --port 9108 \
     --tensor-parallel-size 1 \
@@ -39,7 +51,8 @@ docker run -d \
     --max-num-seqs 32 \
     --max-num-batched-tokens 8192 \
     --gpu-memory-utilization 0.85 \
-    --enforce-eager --trust-remote-code' \
+    --enforce-eager --trust-remote-code \
+    "${quant_args[@]}"' \
   | tee "${RESULT_ROOT}/container-id.txt"
 
 echo "已启动。日志：docker logs -f ${CONTAINER_NAME}"

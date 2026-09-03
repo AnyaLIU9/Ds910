@@ -5,6 +5,8 @@
 镜像：`quay.io/ascend/vllm-ascend:v0.19.1rc1-openeuler`
 端口：`9108`；容器：`qwen36-flash-npu3`。
 
+> 权重必须是 BF16 或昇腾量化格式。`modelopt_fp4`/NVFP4 是 NVIDIA 格式，910B2 不支持；脚本会在创建容器前拒绝它。59GB 单卡应优先使用同模型的 Ascend W8A8 权重，并在启动命令中加入 `--quantization ascend`。
+
 把这五个文件放入模型的 `deployment/`：
 
 ```text
@@ -56,3 +58,11 @@ BENCH_REQUESTS=100 BENCH_OUTPUT_TOKENS=512 bash 03_benchmark.sh
 ```bash
 docker logs --tail 200 qwen36-flash-npu3
 ```
+
+如果日志是 `modelopt_fp4 quantization is currently not supported in npu`，先清理失败容器：
+
+```bash
+bash 04_cleanup.sh
+```
+
+不要继续改显存参数；需要向权重提供方取得同一后训练模型的 Ascend W8A8 版本，或者改用 NVIDIA GPU 部署当前 FP4 权重。

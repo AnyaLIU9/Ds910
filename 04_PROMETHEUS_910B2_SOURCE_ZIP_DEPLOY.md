@@ -99,10 +99,10 @@ bash /data/models/Tensor/check/01_host_preflight.sh
 
 人工确认 NPU 5 是 910B2，而且没有未知任务大量占用 HBM。`npu-smi` 只在宿主机运行；容器中没有该命令不算错误。
 
-当前服务器没有编号 4 的物理卡，本文沿用已经确定的映射：
+物理卡编号不连续不表示设备 ID 会自动前移；手工挂载 `/dev/davinci5` 时使用设备 ID 5：
 
 ```text
-宿主机物理 NPU 5 → 容器 CANN 逻辑 4 → Python 进程内 npu:0
+宿主机物理 NPU 5 → ASCEND_RT_VISIBLE_DEVICES=5 → Python 进程内 npu:0
 ```
 
 ## 3. [宿主机] 进入唯一的 setup 容器
@@ -120,7 +120,7 @@ docker run --rm -it \
   --device=/dev/davinci_manager \
   --device=/dev/devmm_svm \
   --device=/dev/hisi_hdc \
-  -e ASCEND_RT_VISIBLE_DEVICES=4 \
+  -e ASCEND_RT_VISIBLE_DEVICES=5 \
   -e SOC_VERSION=ascend910b2 \
   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro \
   -v /data/models:/data/models \
@@ -148,8 +148,7 @@ bash /data/models/Tensor/check/install_offline_env.sh
 3. 使用容器 Python 3.11；
 4. 从零开始，使用 `--no-index --no-deps` 一次性安装 `prompt_toolkit` 和 `wcwidth`，完全不访问镜像；
 5. 检查 `requirements-ascend.txt` 中所有直接依赖的版本；
-6. 执行 `pip check`；
-7. 通过 `PYTHONPATH=/data/models/Tensor/test/python` 验证源码导入。
+6. 验证 `prompt_toolkit`、`wcwidth` 和源码导入。
 
 不要再执行 `pip install -r requirements-ascend.txt`，也不要执行 `pip install .`。源码的 `pyproject.toml` 描述的是 CUDA 默认依赖；Ascend 运行脚本会直接设置 `PYTHONPATH`，无需把源码安装进 venv。
 
@@ -165,8 +164,7 @@ python -m pip install --no-index --no-deps \
 
 ```text
 missing/mismatch count: 0
-No broken requirements found.
-[PASS] 持久化环境、Ascend 直接依赖和源码导入检查全部通过
+[PASS] 持久化环境、Ascend 直接依赖及 prompt_toolkit/wcwidth 导入检查全部通过
 ```
 
 当前源码声明的直接依赖已经全部纳入检查；结合基础镜像现状，补充清单就是 `prompt_toolkit` 和它的依赖 `wcwidth`。如果脚本仍列出其他 `MISSING` 或 `MISMATCH`，不要继续量化，先按实际输出补对应 wheel。
@@ -180,7 +178,7 @@ No broken requirements found.
 bash /data/models/Tensor/check/02_container_preflight.sh
 ```
 
-脚本会在进程内 `npu:0` 分配 128 MiB 并保持 15 秒。看到提示时，立即在另一个宿主机终端执行：
+脚本本身不会调用 `npu-smi`。它会显示每个检查阶段，并在进程内 `npu:0` 分配 128 MiB、保持 15 秒。看到提示时，在另一个宿主机终端执行：
 
 ```bash
 # 另一个宿主机终端
@@ -249,7 +247,7 @@ docker run -d \
   --device=/dev/davinci_manager \
   --device=/dev/devmm_svm \
   --device=/dev/hisi_hdc \
-  -e ASCEND_RT_VISIBLE_DEVICES=4 \
+  -e ASCEND_RT_VISIBLE_DEVICES=5 \
   -e SOC_VERSION=ascend910b2 \
   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro \
   -v /data/models:/data/models \
@@ -292,7 +290,7 @@ docker exec -d tensor-w8a8-npu5 bash -lc '
   set -euo pipefail
   source /data/models/venv/bin/activate
   cd /data/models/Tensor/test
-  export ASCEND_RT_VISIBLE_DEVICES=4 SOC_VERSION=ascend910b2
+  export ASCEND_RT_VISIBLE_DEVICES=5 SOC_VERSION=ascend910b2
   export PROMETHEUS_ASCEND_MOE_KERNEL=eager
   export SLOTS_PER_LAYER=16 MAX_RUNNING_REQUESTS=1
   export MAX_SEQ_LEN=2048 MAX_PREFILL_LENGTH=256 PORT=9108
@@ -340,7 +338,7 @@ docker exec -d tensor-w8a8-npu5 bash -lc '
   set -euo pipefail
   source /data/models/venv/bin/activate
   cd /data/models/Tensor/test
-  export ASCEND_RT_VISIBLE_DEVICES=4 SOC_VERSION=ascend910b2
+  export ASCEND_RT_VISIBLE_DEVICES=5 SOC_VERSION=ascend910b2
   export PROMETHEUS_ASCEND_MOE_KERNEL=gmm
   export SLOTS_PER_LAYER=16 MAX_RUNNING_REQUESTS=1
   export MAX_SEQ_LEN=2048 MAX_PREFILL_LENGTH=256 PORT=9108
@@ -442,5 +440,5 @@ docker rm -f tensor-w8a8-npu5
 - 容器里没有 `npu-smi`：正常；只在宿主机检查物理卡。
 - `torch.npu.device_count()` 不是 1：卡隔离失败，不要加载模型。
 - 显存不在物理 NPU 5：设备映射不符合预期，立即停止。
-- `pip check` 仍报缺包：将报错所指的 wheel 手工下载进 `check`，重新运行安装脚本。
+- MindStudio、`mindstudio-kpp` 或 `plotly` 缺失：这是基础镜像中无关工具的依赖状态，不属于本项目依赖，不需要补装；最新版安装脚本不再执行全局 `pip check`。
 - 服务 OOM：先将 `MAX_SEQ_LEN` 从 2048 降到 1024、`MAX_PREFILL_LENGTH` 从 256 降到 128，再将 `SLOTS_PER_LAYER` 从 16 降到 12 或 8；不得低于 top-k 8。

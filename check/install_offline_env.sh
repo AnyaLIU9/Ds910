@@ -83,9 +83,6 @@ if [[ -s "$missing_file" ]]; then
   fail "请手工下载对应的 Python 3.11/aarch64 wheel 到 $CHECK_DIR，然后重新运行本脚本"
 fi
 
-# 此时只检查基础镜像和离线 wheel 的依赖闭包；不要先安装带 CUDA 默认元数据的源码包。
-python -m pip check
-
 PYTHONPATH="$SOURCE_DIR/python" python - <<'PY'
 import prompt_toolkit
 import wcwidth
@@ -96,5 +93,6 @@ print("wcwidth:", wcwidth.__version__)
 print("prometheus source:", prometheus.__file__)
 PY
 
-pass "持久化环境、Ascend 直接依赖和源码导入检查全部通过"
+pass "持久化环境、Ascend 直接依赖及 prompt_toolkit/wcwidth 导入检查全部通过"
+echo "说明：未运行全局 pip check；基础镜像内 MindStudio 等无关工具的可选依赖缺失不影响本部署。"
 echo "后续进入新容器后执行：source $VENV_DIR/bin/activate"

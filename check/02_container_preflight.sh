@@ -5,11 +5,12 @@ MODEL_ROOT="${MODEL_ROOT:-/data/models/Tensor}"
 SOURCE_DIR="${SOURCE_DIR:-${MODEL_ROOT}/test}"
 VENV_DIR="${VENV_DIR:-/data/models/venv}"
 EXPECTED_SOC="${EXPECTED_SOC:-ascend910b2}"
-EXPECTED_RT_DEVICE="${EXPECTED_RT_DEVICE:-4}"
+EXPECTED_RT_DEVICE="${EXPECTED_RT_DEVICE:-5}"
 MAPPING_SLEEP_SECONDS="${MAPPING_SLEEP_SECONDS:-15}"
 
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }
+trap 'echo "[FAIL] 容器 NPU 检查失败；请查看上方第一个 Python Traceback/CANN 错误，末尾 ERR99999 UNKNOWN application exception 只是汇总。" >&2' ERR
 
 [[ -d "$SOURCE_DIR" ]] || fail "缺少源码目录：$SOURCE_DIR"
 [[ -x "$VENV_DIR/bin/python" ]] || fail "虚拟环境不存在：$VENV_DIR"
@@ -21,10 +22,15 @@ export PYTHONPATH="$SOURCE_DIR/python${PYTHONPATH:+:$PYTHONPATH}"
 source "$VENV_DIR/bin/activate"
 cd "$SOURCE_DIR"
 
+echo "[CHECK] 容器设备节点（本脚本不会调用 npu-smi）："
+ls -l /dev/davinci5 /dev/davinci_manager /dev/devmm_svm /dev/hisi_hdc
+
 python - <<'PY'
 import os
+print("[CHECK] 导入 torch/torch_npu")
 import torch
 import torch_npu
+print("[CHECK] 从源码导入 prometheus")
 import prometheus
 
 print("torch:", torch.__version__)
@@ -33,6 +39,7 @@ print("prometheus:", prometheus.__file__)
 print("ASCEND_RT_VISIBLE_DEVICES:", os.environ.get("ASCEND_RT_VISIBLE_DEVICES"))
 assert torch.npu.is_available(), "torch.npu.is_available() is false"
 assert torch.npu.device_count() == 1, f"expected one visible NPU, got {torch.npu.device_count()}"
+print("[CHECK] 初始化进程设备 npu:0")
 torch.npu.set_device(0)
 name = torch.npu.get_device_name(0)
 print("process device: npu:0")
@@ -55,7 +62,7 @@ import torch_npu
 seconds = int(os.environ["MAPPING_SLEEP_SECONDS"])
 x = torch.empty(128 * 1024 * 1024, dtype=torch.uint8, device="npu:0")
 print(f"已在进程内 npu:0 分配 128 MiB，将保持 {seconds} 秒。")
-print("现在必须在宿主机运行 npu-smi info，确认新增显存位于物理 NPU 5。")
+print("如需核对物理卡，请在另一个宿主机终端观察物理 NPU 5；不要在本容器运行 npu-smi。")
 time.sleep(seconds)
 del x
 torch.npu.synchronize()

@@ -82,7 +82,7 @@ curl -I --connect-timeout 10 --max-time 20 \
   "${PYPI_INDEX_URL%/}/pip/"
 ```
 
-这里必须返回 HTTP 响应后再创建环境。终端中使用纯 URL，不要把 Markdown 的 `[文字](地址)` 格式复制进命令。
+返回 `200` 才开始安装。返回 `429 Too Many Requests` 表示镜像正在限流：网络是通的，但此时不要启动 pip，也不要反复 curl；按响应中的 `Retry-After` 等待，或联系镜像管理员。终端中使用纯 URL，不要把 Markdown 的 `[文字](地址)` 格式复制进命令。
 
 ```bash
 docker run --rm -it \
@@ -117,8 +117,8 @@ export PYPI_INDEX_URL="${PYPI_INDEX_URL:-http://mirrors.tools.huawei.com/pypi/si
 export PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.tools.huawei.com}"
 export PIP_INDEX_URL="$PYPI_INDEX_URL"
 export PIP_TRUSTED_HOST="$PYPI_TRUSTED_HOST"
-export PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
-export PIP_RETRIES="${PIP_RETRIES:-10}"
+export PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-30}"
+export PIP_RETRIES="${PIP_RETRIES:-0}"
 unset PIP_EXTRA_INDEX_URL
 
 python -m pip config --site set global.index-url "$PIP_INDEX_URL"
@@ -127,10 +127,82 @@ python -m pip config --site set global.timeout "$PIP_DEFAULT_TIMEOUT"
 python -m pip config --site set global.retries "$PIP_RETRIES"
 python -m pip config --site unset global.extra-index-url 2>/dev/null || true
 python -m pip config list
+```
 
-python -m pip install --no-cache-dir 'setuptools>=77' wheel
-python -m pip install --no-cache-dir -r requirements-ascend.txt
-python -m pip install --no-cache-dir . --no-build-isolation --no-deps
+不要立刻再次执行整份 `pip install -r requirements-ascend.txt`。先完全离线审计镜像中已有包：
+
+```bash
+python - <<'PY'
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
+from packaging.requirements import Requirement
+
+missing = []
+for line in Path("requirements-ascend.txt").read_text().splitlines():
+    line = line.strip()
+    if not line or line.startswith("#"):
+        continue
+    requirement = Requirement(line)
+    try:
+        installed = version(requirement.name)
+    except PackageNotFoundError:
+        missing.append(line)
+        print(f"MISSING   {line}")
+        continue
+    if installed in requirement.specifier:
+        print(f"OK        {requirement.name}=={installed}")
+    else:
+        missing.append(line)
+        print(f"MISMATCH  {requirement.name}=={installed}; require {requirement.specifier}")
+
+Path("/tmp/prometheus-missing-requirements.txt").write_text(
+    "\n".join(missing) + ("\n" if missing else ""), encoding="utf-8"
+)
+print("missing requirement count:", len(missing))
+PY
+
+cat /tmp/prometheus-missing-requirements.txt
+```
+
+刚才已经确认满足的包有：
+
+```text
+setuptools
+wheel
+packaging
+einops
+fastapi
+huggingface_hub
+msgpack
+numpy
+openai
+partial-json-parser
+```
+
+这只代表 pip 收到 429 前已经打印到这里；后续依赖仍以审计结果的 `MISSING`/`MISMATCH` 为准。
+
+如果缺失文件为空，不再访问镜像，直接安装本地源码：
+
+```bash
+test ! -s /tmp/prometheus-missing-requirements.txt
+python -m pip install --no-index --no-build-isolation --no-deps .
+```
+
+如果有缺失项，等待镜像恢复为 HTTP 200 后，一次只安装一项：
+
+```bash
+python -m pip install \
+  --timeout 30 \
+  --retries 0 \
+  '这里替换成一条 MISSING 或 MISMATCH requirement'
+```
+
+每装一项就重新执行离线审计。不要反复安装整份 requirements，不要使用 `--no-cache-dir`，也不要增加 retries；这样可利用 pip 缓存并减少镜像请求。再次收到 429 时立即停止等待。所有下载地址必须来自指定的 `PYPI_INDEX_URL`，不要增加其他 `extra-index-url`。
+
+全部满足后安装并验证本地源码：
+
+```bash
+python -m pip install --no-index --no-build-isolation --no-deps .
 
 python - <<'PY'
 import torch, torch_npu, prometheus
@@ -139,18 +211,7 @@ assert torch.npu.is_available() and torch.npu.device_count() == 1
 PY
 ```
 
-安装日志里的下载地址必须全部来自你指定的 `PYPI_INDEX_URL`。如果依赖在该镜像中不存在或暂未同步，停止并记录缺失的包和版本；不要临时增加其他 `extra-index-url`。
-
-当前服务器实测可达的默认地址为：
-
-```bash
-export PYPI_INDEX_URL=http://mirrors.tools.huawei.com/pypi/simple
-export PYPI_TRUSTED_HOST=mirrors.tools.huawei.com
-```
-
-也可以设置为单位提供的华为制品代理地址。`PYPI_TRUSTED_HOST` 应填写 URL 中的主机名；后续检查脚本使用同名变量核对配置。
-
-不要执行 `scripts/build-release-wheels.sh`，它包含 CUDA release/kernel-cache 构建逻辑。`requirements-ascend.txt` 刻意不安装 torch、torch_npu、vLLM、Triton、flashlib 或 CUDA 包，这些组件必须继续使用基础镜像中已经匹配好的版本。
+也可以把 `PYPI_INDEX_URL` 改成单位提供的其他华为制品代理地址，`PYPI_TRUSTED_HOST` 填写 URL 中的主机名。不要执行 `scripts/build-release-wheels.sh`；`requirements-ascend.txt` 也刻意不安装 torch、torch_npu、vLLM、Triton、flashlib 或 CUDA 包，这些组件必须继续使用基础镜像版本。
 
 安装完成后，在容器内执行统一环境和卡映射检查：
 

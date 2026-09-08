@@ -208,11 +208,11 @@ python -m pip install \
 - 文件名：`prompt_toolkit-3.0.53-py3-none-any.whl`
 - SHA256：`01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2`
 
-将下载好的文件传到服务器 `/data/models/wheelhouse/`，然后在宿主机校验：
+将下载好的文件放到服务器 `/data/models/Tensor/check/`，然后在宿主机校验：
 
 ```bash
-mkdir -p /data/models/wheelhouse
-sha256sum /data/models/wheelhouse/prompt_toolkit-3.0.53-py3-none-any.whl
+test -d /data/models/Tensor/check
+sha256sum /data/models/Tensor/check/prompt_toolkit-3.0.53-py3-none-any.whl
 ```
 
 输出必须与上面的 SHA256 完全一致。随后用现有镜像启动一次性容器，复用 `/data/models/venv`，全程不访问任何 Python 镜像：
@@ -226,13 +226,13 @@ docker run --rm \
     set -e
     source /data/models/venv/bin/activate
     python -m pip install --no-index --no-deps \
-      /data/models/wheelhouse/prompt_toolkit-3.0.53-py3-none-any.whl
+      /data/models/Tensor/check/prompt_toolkit-3.0.53-py3-none-any.whl
     python -c "import prompt_toolkit; print(prompt_toolkit.__version__)"
     python -m pip check
   '
 ```
 
-这里的 `--no-index` 明确禁止 pip 访问索引，`--no-deps` 明确禁止它继续解析或下载依赖。若最后的 `pip check` 报告还缺 `wcwidth` 等传递依赖，按同样方式从 PyPI 官方文件页下载与容器 Python 3.11 兼容的 wheel，校验后放入 `/data/models/wheelhouse/` 再离线安装；不要在宿主机 Python 3.13 环境里创建或修改这个 venv。
+这里的 `--no-index` 明确禁止 pip 访问索引，`--no-deps` 明确禁止它继续解析或下载依赖。若最后的 `pip check` 报告还缺 `wcwidth` 等传递依赖，按同样方式从 PyPI 官方文件页下载与容器 Python 3.11 兼容的 wheel，校验后放入 `/data/models/Tensor/check/` 再离线安装；不要在宿主机 Python 3.13 环境里创建或修改这个 venv。
 
 全部满足后安装并验证本地源码：
 

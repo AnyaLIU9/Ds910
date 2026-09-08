@@ -59,9 +59,19 @@ bash /data/models/Tensor/check/01_host_preflight.sh
 
 ## 3. 创建安装容器
 
+如果之前按旧版文档创建过容器，先清理旧容器名；带 `--rm` 的安装容器在 `exit` 后通常已经自动消失：
+
+```bash
+docker ps -a --filter 'name=^/prometheus-b2-setup$' \
+  --filter 'name=^/prometheus-b2-npu5$'
+docker rm -f prometheus-b2-setup prometheus-b2-npu5 2>/dev/null || true
+```
+
+这只删除 Docker 容器，不删除镜像，也不删除宿主机 `/data/models` 中的绑定挂载数据。
+
 ```bash
 docker run --rm -it \
-  --name prometheus-b2-setup \
+  --name tensor-w8a8-setup \
   --network host --ipc host --shm-size 32g \
   --device=/dev/davinci5 \
   --device=/dev/davinci_manager \
@@ -163,7 +173,7 @@ du -sh \
 
 ```bash
 docker run -d \
-  --name prometheus-b2-npu5 \
+  --name tensor-w8a8-npu5 \
   --restart unless-stopped \
   --network host --ipc host --shm-size 32g \
   --device=/dev/davinci5 \
@@ -177,7 +187,7 @@ docker run -d \
   -w /data/models/Tensor/test \
   quay.io/ascend/vllm-ascend:v0.20.2rc1-openeuler sleep infinity
 
-docker exec prometheus-b2-npu5 bash -lc '
+docker exec tensor-w8a8-npu5 bash -lc '
   source /data/models/prometheus-venv/bin/activate
   python -c "import torch, torch_npu; print(torch.npu.device_count(), torch.npu.get_device_name(0))"
 '
@@ -186,7 +196,7 @@ docker exec prometheus-b2-npu5 bash -lc '
 ## 7. W8A8 预检
 
 ```bash
-docker exec -it prometheus-b2-npu5 \
+docker exec -it tensor-w8a8-npu5 \
   bash /data/models/Tensor/check/03_w8a8_preflight.sh
 ```
 
@@ -203,7 +213,7 @@ cat /data/models/prometheus-results/preflight-w8a8/moe-operator.json
 ## 8. W8A8 eager 冒烟
 
 ```bash
-docker exec -d prometheus-b2-npu5 bash -lc '
+docker exec -d tensor-w8a8-npu5 bash -lc '
   set -euo pipefail
   source /data/models/prometheus-venv/bin/activate
   cd /data/models/Tensor/test
@@ -238,7 +248,7 @@ curl --fail --max-time 600 http://127.0.0.1:9108/v1/chat/completions \
     "stream":false
   }'
 
-docker exec prometheus-b2-npu5 bash -lc \
+docker exec tensor-w8a8-npu5 bash -lc \
   'pkill -TERM -f "prometheus.cli serve" || true'
 sleep 10
 ```
@@ -248,7 +258,7 @@ sleep 10
 正式压测强制使用 GMM，不允许 `auto` 悄悄降级：
 
 ```bash
-docker exec -d prometheus-b2-npu5 bash -lc '
+docker exec -d tensor-w8a8-npu5 bash -lc '
   set -euo pipefail
   source /data/models/prometheus-venv/bin/activate
   cd /data/models/Tensor/test
@@ -330,7 +340,7 @@ tail -f /data/models/prometheus-logs/w8a8-gmm.log
 停止服务或容器：
 
 ```bash
-docker exec prometheus-b2-npu5 bash -lc \
+docker exec tensor-w8a8-npu5 bash -lc \
   'pkill -TERM -f "prometheus.cli serve" || true'
-docker stop prometheus-b2-npu5
+docker stop tensor-w8a8-npu5
 ```

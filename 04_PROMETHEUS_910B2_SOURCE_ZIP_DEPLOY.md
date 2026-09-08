@@ -146,16 +146,20 @@ bash /data/models/Tensor/check/install_offline_env.sh
 1. 校验两个 wheel；
 2. 不存在时创建 `/data/models/venv`，已存在时直接复用；
 3. 使用容器 Python 3.11；
-4. 使用 `--no-index --no-deps` 安装 `prompt_toolkit` 和 `wcwidth`，完全不访问镜像；
+4. 从零开始，使用 `--no-index --no-deps` 一次性安装 `prompt_toolkit` 和 `wcwidth`，完全不访问镜像；
 5. 检查 `requirements-ascend.txt` 中所有直接依赖的版本；
 6. 执行 `pip check`；
 7. 通过 `PYTHONPATH=/data/models/Tensor/test/python` 验证源码导入。
 
 不要再执行 `pip install -r requirements-ascend.txt`，也不要执行 `pip install .`。源码的 `pyproject.toml` 描述的是 CUDA 默认依赖；Ascend 运行脚本会直接设置 `PYTHONPATH`，无需把源码安装进 venv。
 
-### 你当前已经装好 prompt_toolkit，只缺 wcwidth
+脚本内执行的离线安装等价于下面这条命令；这是说明，不需要再重复执行：
 
-把 `wcwidth-0.2.13-py2.py3-none-any.whl` 放入 `check` 目录后，直接重新运行上面的 `install_offline_env.sh`。它会复用现有 venv，不需要删除或重建。
+```bash
+python -m pip install --no-index --no-deps \
+  /data/models/Tensor/check/wcwidth-0.2.13-py2.py3-none-any.whl \
+  /data/models/Tensor/check/prompt_toolkit-3.0.53-py3-none-any.whl
+```
 
 成功时应看到：
 
@@ -165,7 +169,7 @@ No broken requirements found.
 [PASS] 持久化环境、Ascend 直接依赖和源码导入检查全部通过
 ```
 
-如果脚本列出其他 `MISSING` 或 `MISMATCH`，将对应的 Python 3.11/aarch64 wheel 手工下载到 `/data/models/Tensor/check/`，重新运行同一个脚本即可。脚本会自动离线安装该目录中的所有 `.whl`，不用改命令。
+当前源码声明的直接依赖已经全部纳入检查；结合基础镜像现状，补充清单就是 `prompt_toolkit` 和它的依赖 `wcwidth`。如果脚本仍列出其他 `MISSING` 或 `MISMATCH`，不要继续量化，先按实际输出补对应 wheel。
 
 ## 5. [setup 容器内] 检查 Python、NPU 和卡映射
 
@@ -433,7 +437,7 @@ docker rm -f tensor-w8a8-npu5
 
 ## 常见错误
 
-- `No module named wcwidth`：把 `wcwidth` wheel 放进 `check`，在 setup 容器中重新运行 `install_offline_env.sh`。
+- `No module named prompt_toolkit` 或 `No module named wcwidth`：确认两个 wheel 都在 `check` 目录，然后在 setup 容器中重新运行 `install_offline_env.sh`；脚本会同时安装两者。
 - `No module named prometheus`：确认使用最新版检查脚本；运行源码时必须设置 `PYTHONPATH=/data/models/Tensor/test/python`。
 - 容器里没有 `npu-smi`：正常；只在宿主机检查物理卡。
 - `torch.npu.device_count()` 不是 1：卡隔离失败，不要加载模型。

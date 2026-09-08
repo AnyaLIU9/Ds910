@@ -39,10 +39,10 @@ assert sys.version_info[:2] == (3, 11), f"要求容器 Python 3.11，实际为 {
 print("Python:", sys.version)
 PY
 
-# 安装 check 目录中的所有 wheel，方便以后按同样方式手工补包。
-mapfile -t wheels < <(find "$CHECK_DIR" -maxdepth 1 -type f -name '*.whl' -print | sort)
-(( ${#wheels[@]} > 0 )) || fail "${CHECK_DIR} 中没有 wheel"
-python -m pip install --no-index --no-deps "${wheels[@]}"
+# 从零开始一次性离线安装 prompt_toolkit 及其依赖 wcwidth。
+python -m pip install --no-index --no-deps \
+  "$WCWIDTH_WHEEL" \
+  "$PROMPT_WHEEL"
 
 mkdir -p "$RESULT_DIR"
 missing_file="$RESULT_DIR/requirements-missing.txt"

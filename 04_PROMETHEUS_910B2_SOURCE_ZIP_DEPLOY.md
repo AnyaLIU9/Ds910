@@ -208,31 +208,28 @@ python -m pip install \
 - 文件名：`prompt_toolkit-3.0.53-py3-none-any.whl`
 - SHA256：`01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2`
 
-将下载好的文件放到服务器 `/data/models/Tensor/check/`，然后在宿主机校验：
+在进入安装容器前，将下载好的文件放到服务器 `/data/models/Tensor/check/`。如果现在已经位于 `tensor-w8a8-setup` 安装容器内，不要退出，也不要再执行一次 `docker run`；绑定挂载使容器能直接看到该文件。
+
+仍在当前安装容器内执行校验：
 
 ```bash
-test -d /data/models/Tensor/check
+test -f /data/models/Tensor/check/prompt_toolkit-3.0.53-py3-none-any.whl
 sha256sum /data/models/Tensor/check/prompt_toolkit-3.0.53-py3-none-any.whl
 ```
 
-输出必须与上面的 SHA256 完全一致。随后用现有镜像启动一次性容器，复用 `/data/models/venv`，全程不访问任何 Python 镜像：
+输出必须与上面的 SHA256 完全一致。随后继续在这个安装容器及已经激活的 `/data/models/venv` 中直接安装，全程不访问任何 Python 镜像：
 
 ```bash
-docker run --rm \
-  -v /data/models:/data/models \
-  -w /data/models/Tensor/test \
-  quay.io/ascend/vllm-ascend:v0.20.2rc1-openeuler \
-  bash -lc '
-    set -e
-    source /data/models/venv/bin/activate
-    python -m pip install --no-index --no-deps \
-      /data/models/Tensor/check/prompt_toolkit-3.0.53-py3-none-any.whl
-    python -c "import prompt_toolkit; print(prompt_toolkit.__version__)"
-    python -m pip check
-  '
+source /data/models/venv/bin/activate
+python -m pip install --no-index --no-deps \
+  /data/models/Tensor/check/prompt_toolkit-3.0.53-py3-none-any.whl
+python -c "import prompt_toolkit; print(prompt_toolkit.__version__)"
+python -m pip check
 ```
 
 这里的 `--no-index` 明确禁止 pip 访问索引，`--no-deps` 明确禁止它继续解析或下载依赖。若最后的 `pip check` 报告还缺 `wcwidth` 等传递依赖，按同样方式从 PyPI 官方文件页下载与容器 Python 3.11 兼容的 wheel，校验后放入 `/data/models/Tensor/check/` 再离线安装；不要在宿主机 Python 3.13 环境里创建或修改这个 venv。
+
+如果已经误退出安装容器，因为它带有 `--rm`，容器本身会被删除，但 `/data/models/venv` 不会丢失。此时重新执行第 3 节完整的 `docker run` 命令进入新的安装容器，再执行 `source /data/models/venv/bin/activate` 后继续即可；不要另起一个缺少 NPU 设备挂载的简化容器。
 
 全部满足后安装并验证本地源码：
 

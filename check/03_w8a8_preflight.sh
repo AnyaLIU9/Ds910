@@ -17,6 +17,7 @@ fail() { echo "[FAIL] $*" >&2; exit 1; }
 
 export ASCEND_RT_VISIBLE_DEVICES="$EXPECTED_RT_DEVICE"
 export SOC_VERSION=ascend910b2
+export PYTHONPATH="$SOURCE_DIR/python${PYTHONPATH:+:$PYTHONPATH}"
 source "$VENV_DIR/bin/activate"
 cd "$SOURCE_DIR"
 mkdir -p "$RESULT_DIR"

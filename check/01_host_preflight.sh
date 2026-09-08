@@ -8,6 +8,9 @@ IMAGE="${IMAGE:-quay.io/ascend/vllm-ascend:v0.20.2rc1-openeuler}"
 NPU_PHYSICAL_ID="${NPU_PHYSICAL_ID:-5}"
 SERVICE_PORT="${SERVICE_PORT:-9108}"
 MIN_FREE_GIB="${MIN_FREE_GIB:-80}"
+CHECK_DIR="${CHECK_DIR:-${MODEL_ROOT}/check}"
+PROMPT_WHEEL="${CHECK_DIR}/prompt_toolkit-3.0.53-py3-none-any.whl"
+WCWIDTH_WHEEL="${CHECK_DIR}/wcwidth-0.2.13-py2.py3-none-any.whl"
 
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }
@@ -22,8 +25,10 @@ need_cmd docker
 need_cmd npu-smi
 need_cmd find
 need_cmd df
+need_cmd sha256sum
 need_dir "$MODEL_ROOT"
 need_dir "$SOURCE_DIR"
+need_dir "$CHECK_DIR"
 
 for path in \
   "$SOURCE_DIR/README_ASCEND.md" \
@@ -34,10 +39,21 @@ for path in \
   "$SOURCE_DIR/tools/ascend_probe.py" \
   "$SOURCE_DIR/tools/validate_ascend_checkpoint.py" \
   "$MODEL_ROOT/config.json" \
-  "$MODEL_ROOT/model.safetensors.index.json"; do
+  "$MODEL_ROOT/model.safetensors.index.json" \
+  "$CHECK_DIR/install_offline_env.sh" \
+  "$PROMPT_WHEEL" \
+  "$WCWIDTH_WHEEL"; do
   need_file "$path"
 done
 need_dir "$SOURCE_DIR/python/prometheus/ascend"
+
+printf '%s  %s\n' \
+  "01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2" \
+  "$PROMPT_WHEEL" | sha256sum -c -
+printf '%s  %s\n' \
+  "3da69048e4540d84af32131829ff948f1e022c1c6bdb8d6102117aac784f6859" \
+  "$WCWIDTH_WHEEL" | sha256sum -c -
+pass "离线 Python wheel 文件存在且 SHA256 正确"
 
 arch="$(uname -m)"
 [[ "$arch" == "aarch64" ]] || fail "宿主机架构是 $arch，要求 aarch64"

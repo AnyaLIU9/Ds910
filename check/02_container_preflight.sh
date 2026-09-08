@@ -7,8 +7,6 @@ VENV_DIR="${VENV_DIR:-/data/models/venv}"
 EXPECTED_SOC="${EXPECTED_SOC:-ascend910b2}"
 EXPECTED_RT_DEVICE="${EXPECTED_RT_DEVICE:-4}"
 MAPPING_SLEEP_SECONDS="${MAPPING_SLEEP_SECONDS:-15}"
-PYPI_INDEX_URL="${PYPI_INDEX_URL:-http://mirrors.tools.huawei.com/pypi/simple}"
-PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.tools.huawei.com}"
 
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }
@@ -18,9 +16,7 @@ pass() { echo "[PASS] $*"; }
 
 export ASCEND_RT_VISIBLE_DEVICES="$EXPECTED_RT_DEVICE"
 export SOC_VERSION="$EXPECTED_SOC"
-export PIP_INDEX_URL="$PYPI_INDEX_URL"
-export PIP_TRUSTED_HOST="$PYPI_TRUSTED_HOST"
-unset PIP_EXTRA_INDEX_URL
+export PYTHONPATH="$SOURCE_DIR/python${PYTHONPATH:+:$PYTHONPATH}"
 
 source "$VENV_DIR/bin/activate"
 cd "$SOURCE_DIR"
@@ -49,13 +45,6 @@ assert not missing, f"missing required torch_npu ops: {missing}"
 print("required TorchNPU ops: PASS")
 PY
 pass "Torch、TorchNPU、Prometheus、单卡和 W8A8 必需算子检查通过"
-
-configured_index="$(python -m pip config get global.index-url 2>/dev/null || true)"
-[[ "$configured_index" == "$PYPI_INDEX_URL" ]] \
-  || fail "venv pip index-url 与预期不一致：期望 $PYPI_INDEX_URL，实际 ${configured_index:-未配置}"
-configured_extra="$(python -m pip config get global.extra-index-url 2>/dev/null || true)"
-[[ -z "$configured_extra" ]] || fail "检测到禁止的 extra-index-url：$configured_extra"
-pass "pip 仅配置指定的 PyPI 镜像：$PYPI_INDEX_URL"
 
 MAPPING_SLEEP_SECONDS="$MAPPING_SLEEP_SECONDS" python - <<'PY'
 import os

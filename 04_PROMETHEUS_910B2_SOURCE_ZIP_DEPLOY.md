@@ -199,6 +199,41 @@ python -m pip install \
 
 每装一项就重新执行离线审计。不要反复安装整份 requirements，不要使用 `--no-cache-dir`，也不要增加 retries；这样可利用 pip 缓存并减少镜像请求。再次收到 429 时立即停止等待。所有下载地址必须来自指定的 `PYPI_INDEX_URL`，不要增加其他 `extra-index-url`。
 
+### `prompt_toolkit` 手工下载并离线安装
+
+如果审计结果只剩 `prompt_toolkit>=3.0,<4`，可以在有外网的电脑上用浏览器打开 PyPI 官方下载页：
+
+- 下载页：<https://pypi.org/project/prompt-toolkit/#files>
+- wheel 直链：<https://files.pythonhosted.org/packages/54/6f/84908cad2d6aa5144abcf7b42709fe4fdb459bc640ec7ac5786e7693dabc/prompt_toolkit-3.0.53-py3-none-any.whl>
+- 文件名：`prompt_toolkit-3.0.53-py3-none-any.whl`
+- SHA256：`01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2`
+
+将下载好的文件传到服务器 `/data/models/wheelhouse/`，然后在宿主机校验：
+
+```bash
+mkdir -p /data/models/wheelhouse
+sha256sum /data/models/wheelhouse/prompt_toolkit-3.0.53-py3-none-any.whl
+```
+
+输出必须与上面的 SHA256 完全一致。随后用现有镜像启动一次性容器，复用 `/data/models/venv`，全程不访问任何 Python 镜像：
+
+```bash
+docker run --rm \
+  -v /data/models:/data/models \
+  -w /data/models/Tensor/test \
+  quay.io/ascend/vllm-ascend:v0.20.2rc1-openeuler \
+  bash -lc '
+    set -e
+    source /data/models/venv/bin/activate
+    python -m pip install --no-index --no-deps \
+      /data/models/wheelhouse/prompt_toolkit-3.0.53-py3-none-any.whl
+    python -c "import prompt_toolkit; print(prompt_toolkit.__version__)"
+    python -m pip check
+  '
+```
+
+这里的 `--no-index` 明确禁止 pip 访问索引，`--no-deps` 明确禁止它继续解析或下载依赖。若最后的 `pip check` 报告还缺 `wcwidth` 等传递依赖，按同样方式从 PyPI 官方文件页下载与容器 Python 3.11 兼容的 wheel，校验后放入 `/data/models/wheelhouse/` 再离线安装；不要在宿主机 Python 3.13 环境里创建或修改这个 venv。
+
 全部满足后安装并验证本地源码：
 
 ```bash

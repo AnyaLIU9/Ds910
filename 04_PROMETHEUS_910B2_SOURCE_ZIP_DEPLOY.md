@@ -49,6 +49,8 @@ bash /data/models/Tensor/check/01_host_preflight.sh
 
 确认宿主机和镜像分别是 `aarch64`、`arm64`，物理 NPU 5 是 910B2 且没有其他任务占用大量 HBM，9108 端口空闲。转换前建议 `/data/models` 至少有 80 GiB 可用空间。
 
+`npu-smi info` 只在物理机执行。openEuler 容器不要求存在 `npu-smi`，也不把宿主机的 `npu-smi` 可执行文件挂进容器。容器内使用 `torch.npu.is_available()`、`torch.npu.device_count()`、短显存分配和必需 TorchNPU 算子检查来验收运行环境。
+
 这台服务器缺少物理设备 4。采用手工设备节点挂载时：
 
 ```text
@@ -126,7 +128,7 @@ PY
 bash /data/models/Tensor/check/02_container_preflight.sh
 ```
 
-脚本会保持 128 MiB NPU 分配 15 秒。与此同时必须在宿主机执行 `npu-smi info`，确认新增显存位于物理 NPU 5。若出现在 NPU 6，立即停止。进程内部始终使用 `npu:0`。
+脚本会保持 128 MiB NPU 分配 15 秒。与此同时必须另开物理机终端执行 `npu-smi info`，确认新增显存位于物理 NPU 5。不要在容器内执行 `npu-smi`。若显存出现在 NPU 6，立即停止。进程内部始终使用 `npu:0`。
 
 ## 5. 转换 W8A8
 
@@ -199,6 +201,8 @@ docker exec tensor-w8a8-npu5 bash -lc '
 docker exec -it tensor-w8a8-npu5 \
   bash /data/models/Tensor/check/03_w8a8_preflight.sh
 ```
+
+这个脚本不会调用源码中的 `scripts/preflight_ascend.sh`，因为后者当前强制要求运行环境中存在 `npu-smi`。检查脚本会直接执行 checkpoint 校验、TorchNPU 环境检查、H2D 探测和 W8A8 必需算子检查；物理卡状态继续由第 2 节的宿主机脚本负责。
 
 检查：
 

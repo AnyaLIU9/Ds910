@@ -4,7 +4,7 @@ set -euo pipefail
 MODEL_ROOT="${MODEL_ROOT:-/data/models/Tensor}"
 SOURCE_DIR="${SOURCE_DIR:-${MODEL_ROOT}/test}"
 W8A8_MODEL="${W8A8_MODEL:-/data/models/Tensor-W8A8}"
-IMAGE="${IMAGE:-quay.io/ascend/vllm-ascend:v0.20.2rc1}"
+IMAGE="${IMAGE:-quay.io/ascend/vllm-ascend:v0.20.2rc1-openeuler}"
 NPU_PHYSICAL_ID="${NPU_PHYSICAL_ID:-5}"
 SERVICE_PORT="${SERVICE_PORT:-9108}"
 MIN_FREE_GIB="${MIN_FREE_GIB:-80}"

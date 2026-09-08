@@ -7,7 +7,7 @@
 ```text
 CPU：Kunpeng 920（aarch64）
 NPU：Ascend 910B2，使用宿主机物理 NPU 5
-镜像：quay.io/ascend/vllm-ascend:v0.20.2rc1
+镜像：quay.io/ascend/vllm-ascend:v0.20.2rc1-openeuler
 量化输入：/data/models/Tensor
 源码目录：/data/models/Tensor/test
 检查脚本：/data/models/Tensor/check
@@ -72,7 +72,7 @@ docker run --rm -it \
   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro \
   -v /data/models:/data/models \
   -w /data/models/Tensor/test \
-  "$IMAGE" bash
+  quay.io/ascend/vllm-ascend:v0.20.2rc1-openeuler bash
 ```
 
 不要混用手工 `--device` 和 Ascend Docker Runtime。如果服务器必须使用 Ascend Runtime，则改为 `--runtime=ascend -e ASCEND_VISIBLE_DEVICES=5`，移除四个 `--device` 和 `ASCEND_RT_VISIBLE_DEVICES=4`，进入容器后以设备检测结果为准。
@@ -175,7 +175,7 @@ docker run -d \
   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro \
   -v /data/models:/data/models \
   -w /data/models/Tensor/test \
-  "$IMAGE" sleep infinity
+  quay.io/ascend/vllm-ascend:v0.20.2rc1-openeuler sleep infinity
 
 docker exec prometheus-b2-npu5 bash -lc '
   source /data/models/prometheus-venv/bin/activate

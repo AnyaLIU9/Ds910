@@ -72,12 +72,17 @@ docker rm -f prometheus-b2-setup prometheus-b2-npu5 2>/dev/null || true
 
 这只删除 Docker 容器，不删除镜像，也不删除宿主机 `/data/models` 中的绑定挂载数据。
 
-可在启动安装容器前设置自己的 index URL；不设置则使用华为云公网镜像：
+可在启动安装容器前设置自己的 index URL；不设置则使用本机已经实测可达的华为内网镜像：
 
 ```bash
-export PYPI_INDEX_URL="${PYPI_INDEX_URL:-https://mirrors.huaweicloud.com/repository/pypi/simple}"
-export PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.huaweicloud.com}"
+export PYPI_INDEX_URL="${PYPI_INDEX_URL:-http://mirrors.tools.huawei.com/pypi/simple}"
+export PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.tools.huawei.com}"
+
+curl -I --connect-timeout 10 --max-time 20 \
+  "${PYPI_INDEX_URL%/}/pip/"
 ```
+
+这里必须返回 HTTP 响应后再创建环境。终端中使用纯 URL，不要把 Markdown 的 `[文字](地址)` 格式复制进命令。
 
 ```bash
 docker run --rm -it \
@@ -108,8 +113,8 @@ cd /data/models/Tensor/test
 python -m venv --system-site-packages /data/models/venv
 source /data/models/venv/bin/activate
 
-export PYPI_INDEX_URL="${PYPI_INDEX_URL:-https://mirrors.huaweicloud.com/repository/pypi/simple}"
-export PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.huaweicloud.com}"
+export PYPI_INDEX_URL="${PYPI_INDEX_URL:-http://mirrors.tools.huawei.com/pypi/simple}"
+export PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.tools.huawei.com}"
 export PIP_INDEX_URL="$PYPI_INDEX_URL"
 export PIP_TRUSTED_HOST="$PYPI_TRUSTED_HOST"
 export PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
@@ -136,11 +141,11 @@ PY
 
 安装日志里的下载地址必须全部来自你指定的 `PYPI_INDEX_URL`。如果依赖在该镜像中不存在或暂未同步，停止并记录缺失的包和版本；不要临时增加其他 `extra-index-url`。
 
-可以在创建容器前自行选择允许访问的 index URL。例如华为云内网 PyPI：
+当前服务器实测可达的默认地址为：
 
 ```bash
-export PYPI_INDEX_URL=http://mirrors.myhuaweicloud.com/pypi/web/simple
-export PYPI_TRUSTED_HOST=mirrors.myhuaweicloud.com
+export PYPI_INDEX_URL=http://mirrors.tools.huawei.com/pypi/simple
+export PYPI_TRUSTED_HOST=mirrors.tools.huawei.com
 ```
 
 也可以设置为单位提供的华为制品代理地址。`PYPI_TRUSTED_HOST` 应填写 URL 中的主机名；后续检查脚本使用同名变量核对配置。
@@ -150,8 +155,8 @@ export PYPI_TRUSTED_HOST=mirrors.myhuaweicloud.com
 安装完成后，在容器内执行统一环境和卡映射检查：
 
 ```bash
-PYPI_INDEX_URL="${PYPI_INDEX_URL:-https://mirrors.huaweicloud.com/repository/pypi/simple}" \
-PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.huaweicloud.com}" \
+PYPI_INDEX_URL="${PYPI_INDEX_URL:-http://mirrors.tools.huawei.com/pypi/simple}" \
+PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.tools.huawei.com}" \
   bash /data/models/Tensor/check/02_container_preflight.sh
 ```
 

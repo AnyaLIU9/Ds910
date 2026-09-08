@@ -7,8 +7,8 @@ VENV_DIR="${VENV_DIR:-/data/models/venv}"
 EXPECTED_SOC="${EXPECTED_SOC:-ascend910b2}"
 EXPECTED_RT_DEVICE="${EXPECTED_RT_DEVICE:-4}"
 MAPPING_SLEEP_SECONDS="${MAPPING_SLEEP_SECONDS:-15}"
-PYPI_INDEX_URL="${PYPI_INDEX_URL:-https://mirrors.huaweicloud.com/repository/pypi/simple}"
-PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.huaweicloud.com}"
+PYPI_INDEX_URL="${PYPI_INDEX_URL:-http://mirrors.tools.huawei.com/pypi/simple}"
+PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.tools.huawei.com}"
 
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 pass() { echo "[PASS] $*"; }

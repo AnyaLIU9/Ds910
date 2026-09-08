@@ -4,7 +4,7 @@ set -euo pipefail
 MODEL_ROOT="${MODEL_ROOT:-/data/models/Tensor}"
 SOURCE_DIR="${SOURCE_DIR:-${MODEL_ROOT}/test}"
 W8A8_MODEL="${W8A8_MODEL:-/data/models/Tensor-W8A8}"
-VENV_DIR="${VENV_DIR:-/data/models/prometheus-venv}"
+VENV_DIR="${VENV_DIR:-/data/models/venv}"
 RESULT_DIR="${RESULT_DIR:-/data/models/prometheus-results/preflight-w8a8}"
 EXPECTED_RT_DEVICE="${EXPECTED_RT_DEVICE:-4}"
 SLOTS_PER_LAYER="${SLOTS_PER_LAYER:-16}"

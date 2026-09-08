@@ -11,6 +11,7 @@ NPU：Ascend 910B2，使用宿主机物理 NPU 5
 量化输入：/data/models/Tensor
 源码目录：/data/models/Tensor/test
 检查脚本：/data/models/Tensor/check
+持久化环境：/data/models/venv
 W8A8 输出：/data/models/Tensor-W8A8
 端口：9108
 ```
@@ -59,7 +60,7 @@ bash /data/models/Tensor/check/01_host_preflight.sh
 物理 NPU 5 → 容器逻辑 4 → 进程内 npu:0
 ```
 
-## 3. 创建安装容器
+## 3. 创建一次性环境安装容器
 
 如果之前按旧版文档创建过容器，先清理旧容器名；带 `--rm` 的安装容器在 `exit` 后通常已经自动消失：
 
@@ -71,6 +72,13 @@ docker rm -f prometheus-b2-setup prometheus-b2-npu5 2>/dev/null || true
 
 这只删除 Docker 容器，不删除镜像，也不删除宿主机 `/data/models` 中的绑定挂载数据。
 
+可在启动安装容器前设置自己的 index URL；不设置则使用华为云公网镜像：
+
+```bash
+export PYPI_INDEX_URL="${PYPI_INDEX_URL:-https://mirrors.huaweicloud.com/repository/pypi/simple}"
+export PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.huaweicloud.com}"
+```
+
 ```bash
 docker run --rm -it \
   --name tensor-w8a8-setup \
@@ -81,6 +89,8 @@ docker run --rm -it \
   --device=/dev/hisi_hdc \
   -e ASCEND_RT_VISIBLE_DEVICES=4 \
   -e SOC_VERSION=ascend910b2 \
+  -e PYPI_INDEX_URL \
+  -e PYPI_TRUSTED_HOST \
   -v /usr/local/Ascend/driver:/usr/local/Ascend/driver:ro \
   -v /data/models:/data/models \
   -w /data/models/Tensor/test \
@@ -89,21 +99,27 @@ docker run --rm -it \
 
 不要混用手工 `--device` 和 Ascend Docker Runtime。如果服务器必须使用 Ascend Runtime，则改为 `--runtime=ascend -e ASCEND_VISIBLE_DEVICES=5`，移除四个 `--device` 和 `ASCEND_RT_VISIBLE_DEVICES=4`，进入容器后以设备检测结果为准。
 
-## 4. 只通过华为云 PyPI 镜像安装依赖
+## 4. 在 `/data/models/venv` 创建持久化环境
 
 仍在安装容器内执行：
 
 ```bash
 cd /data/models/Tensor/test
-python -m venv --system-site-packages /data/models/prometheus-venv
-source /data/models/prometheus-venv/bin/activate
+python -m venv --system-site-packages /data/models/venv
+source /data/models/venv/bin/activate
 
-export PIP_INDEX_URL=https://mirrors.huaweicloud.com/repository/pypi/simple
-export PIP_TRUSTED_HOST=mirrors.huaweicloud.com
+export PYPI_INDEX_URL="${PYPI_INDEX_URL:-https://mirrors.huaweicloud.com/repository/pypi/simple}"
+export PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.huaweicloud.com}"
+export PIP_INDEX_URL="$PYPI_INDEX_URL"
+export PIP_TRUSTED_HOST="$PYPI_TRUSTED_HOST"
+export PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-120}"
+export PIP_RETRIES="${PIP_RETRIES:-10}"
 unset PIP_EXTRA_INDEX_URL
 
 python -m pip config --site set global.index-url "$PIP_INDEX_URL"
 python -m pip config --site set global.trusted-host "$PIP_TRUSTED_HOST"
+python -m pip config --site set global.timeout "$PIP_DEFAULT_TIMEOUT"
+python -m pip config --site set global.retries "$PIP_RETRIES"
 python -m pip config --site unset global.extra-index-url 2>/dev/null || true
 python -m pip config list
 
@@ -118,14 +134,25 @@ assert torch.npu.is_available() and torch.npu.device_count() == 1
 PY
 ```
 
-安装日志里的下载地址必须全部来自 `mirrors.huaweicloud.com`。如果依赖在华为镜像中不存在或暂未同步，停止并记录缺失的包和版本；不要增加 PyPI、清华源或其他 `extra-index-url`。
+安装日志里的下载地址必须全部来自你指定的 `PYPI_INDEX_URL`。如果依赖在该镜像中不存在或暂未同步，停止并记录缺失的包和版本；不要临时增加其他 `extra-index-url`。
+
+可以在创建容器前自行选择允许访问的 index URL。例如华为云内网 PyPI：
+
+```bash
+export PYPI_INDEX_URL=http://mirrors.myhuaweicloud.com/pypi/web/simple
+export PYPI_TRUSTED_HOST=mirrors.myhuaweicloud.com
+```
+
+也可以设置为单位提供的华为制品代理地址。`PYPI_TRUSTED_HOST` 应填写 URL 中的主机名；后续检查脚本使用同名变量核对配置。
 
 不要执行 `scripts/build-release-wheels.sh`，它包含 CUDA release/kernel-cache 构建逻辑。`requirements-ascend.txt` 刻意不安装 torch、torch_npu、vLLM、Triton、flashlib 或 CUDA 包，这些组件必须继续使用基础镜像中已经匹配好的版本。
 
 安装完成后，在容器内执行统一环境和卡映射检查：
 
 ```bash
-bash /data/models/Tensor/check/02_container_preflight.sh
+PYPI_INDEX_URL="${PYPI_INDEX_URL:-https://mirrors.huaweicloud.com/repository/pypi/simple}" \
+PYPI_TRUSTED_HOST="${PYPI_TRUSTED_HOST:-mirrors.huaweicloud.com}" \
+  bash /data/models/Tensor/check/02_container_preflight.sh
 ```
 
 脚本会保持 128 MiB NPU 分配 15 秒。与此同时必须另开物理机终端执行 `npu-smi info`，确认新增显存位于物理 NPU 5。不要在容器内执行 `npu-smi`。若显存出现在 NPU 6，立即停止。进程内部始终使用 `npu:0`。
@@ -190,7 +217,7 @@ docker run -d \
   quay.io/ascend/vllm-ascend:v0.20.2rc1-openeuler sleep infinity
 
 docker exec tensor-w8a8-npu5 bash -lc '
-  source /data/models/prometheus-venv/bin/activate
+  source /data/models/venv/bin/activate
   python -c "import torch, torch_npu; print(torch.npu.device_count(), torch.npu.get_device_name(0))"
 '
 ```
@@ -219,7 +246,7 @@ cat /data/models/prometheus-results/preflight-w8a8/moe-operator.json
 ```bash
 docker exec -d tensor-w8a8-npu5 bash -lc '
   set -euo pipefail
-  source /data/models/prometheus-venv/bin/activate
+  source /data/models/venv/bin/activate
   cd /data/models/Tensor/test
   export ASCEND_RT_VISIBLE_DEVICES=4 SOC_VERSION=ascend910b2
   export PROMETHEUS_ASCEND_MOE_KERNEL=eager
@@ -264,7 +291,7 @@ sleep 10
 ```bash
 docker exec -d tensor-w8a8-npu5 bash -lc '
   set -euo pipefail
-  source /data/models/prometheus-venv/bin/activate
+  source /data/models/venv/bin/activate
   cd /data/models/Tensor/test
   export ASCEND_RT_VISIBLE_DEVICES=4 SOC_VERSION=ascend910b2
   export PROMETHEUS_ASCEND_MOE_KERNEL=gmm
@@ -339,7 +366,7 @@ tail -f /data/models/prometheus-logs/w8a8-gmm.log
 - `torch.npu.device_count()` 不是 1：卡隔离未生效，不要加载模型。
 - W8A8 eager 成功而 GMM 失败：当前 CANN/torch_npu GMM 接口与代码预期不匹配。
 - 服务 OOM：先确认物理卡正确，再把 `MAX_SEQ_LEN` 从 2048 降到 1024、`MAX_PREFILL_LENGTH` 从 256 降到 128、`SLOTS_PER_LAYER` 从 16 降到 12 或 8；槽数不能低于 top-k 8。
-- 安装后 torch_npu 失效：pip 覆盖了镜像匹配好的 torch。重建 `/data/models/prometheus-venv`，只安装 `requirements-ascend.txt`，源码使用 `--no-deps`。
+- 安装后 torch_npu 失效：pip 覆盖了镜像匹配好的 torch。重建 `/data/models/venv`，只安装 `requirements-ascend.txt`，源码使用 `--no-deps`。
 
 停止服务或容器：
 
